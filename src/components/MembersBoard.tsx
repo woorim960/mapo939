@@ -95,8 +95,6 @@ function formatLeftMs(ms: number) {
 }
 
 function isLikelyBlobUrl(url: string) {
-  // Vercel Blob public URL은 보통 https://<...>.public.blob.vercel-storage.com/... 형태
-  // 환경에 따라 다를 수 있어 "vercel-storage.com" 포함이면 삭제 대상으로 취급.
   return typeof url === "string" && url.includes("vercel-storage.com");
 }
 
@@ -180,8 +178,8 @@ export default function MembersBoard() {
   const [memberFormErr, setMemberFormErr] = useState<string | null>(null);
 
   // ✅ 이미지 교체 삭제 정책용
-  const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null); // edit 시작 시 원본
-  const [tempUploadedUrls, setTempUploadedUrls] = useState<string[]>([]); // 폼에서 새로 업로드된 임시들(저장 전)
+  const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
+  const [tempUploadedUrls, setTempUploadedUrls] = useState<string[]>([]);
 
   // 크롭 모달
   const [cropOpen, setCropOpen] = useState(false);
@@ -195,7 +193,10 @@ export default function MembersBoard() {
   async function refreshAll() {
     setLoading(true);
     try {
-      const [mRes, sRes] = await Promise.all([fetch("/api/members", { cache: "no-store" }), fetch("/api/stats", { cache: "no-store" })]);
+      const [mRes, sRes] = await Promise.all([
+        fetch("/api/members", { cache: "no-store" }),
+        fetch("/api/stats", { cache: "no-store" }),
+      ]);
       const mJson = await mRes.json();
       const sJson = await sRes.json();
       setMembers(mJson.members ?? []);
@@ -471,9 +472,6 @@ export default function MembersBoard() {
   }
 
   async function closeMemberForm() {
-    // ✅ 저장 안 하고 닫으면 폼에서 업로드된 임시 이미지들은 정리(삭제)
-    // edit 모드: originalPhotoUrl은 남겨야 하니까 tempUploadedUrls만 삭제
-    // create 모드: 최종 저장 안 했으면 업로드한 것도 모두 삭제
     if (tempUploadedUrls.length > 0) {
       await Promise.all(tempUploadedUrls.map((u) => blobDelete(u)));
     }
@@ -520,7 +518,7 @@ export default function MembersBoard() {
           body: JSON.stringify({
             name: memberForm.name.trim(),
             phone: memberForm.phone.trim(),
-            birthDate: memberForm.birthDateYmd.trim(), // 서버에서 UTC 변환 처리 or 여기서도 가능
+            birthDate: memberForm.birthDateYmd.trim(),
             photoUrl: memberForm.photoUrl.trim(),
           }),
         });
@@ -531,7 +529,6 @@ export default function MembersBoard() {
           return;
         }
 
-        // ✅ create 성공이면 tempUploadedUrls 중 "최종 photoUrl"은 보존해야 하므로 제외하고 삭제
         const finalUrl = memberForm.photoUrl;
         const toDelete = tempUploadedUrls.filter((u) => u !== finalUrl);
         if (toDelete.length) await Promise.all(toDelete.map((u) => blobDelete(u)));
@@ -544,7 +541,6 @@ export default function MembersBoard() {
         return;
       }
 
-      // edit
       if (!memberForm.memberId) {
         setMemberFormErr("memberId_missing");
         return;
@@ -567,12 +563,10 @@ export default function MembersBoard() {
         return;
       }
 
-      // ✅ edit 성공 후: 원본과 달라졌으면 "원본 이미지 삭제"
       if (originalPhotoUrl && originalPhotoUrl !== memberForm.photoUrl) {
         await blobDelete(originalPhotoUrl);
       }
 
-      // ✅ edit 성공 후: tempUploadedUrls 중 최종 photoUrl만 남기고 나머지 삭제(이미 교체 때 삭제했더라도 안전하게)
       const finalUrl = memberForm.photoUrl;
       const toDelete = tempUploadedUrls.filter((u) => u !== finalUrl);
       if (toDelete.length) await Promise.all(toDelete.map((u) => blobDelete(u)));
@@ -625,18 +619,14 @@ export default function MembersBoard() {
 
       const { url } = await res.json();
 
-      // ✅ 같은 폼에서 여러 번 업로드(교체)하면, 이전에 업로드된 "임시"는 삭제
-      // 단, edit 모드에서 originalPhotoUrl은 PATCH 성공 후에 삭제해야 하므로 여기서 삭제하지 않는다.
       const current = memberForm.photoUrl;
       const original = originalPhotoUrl;
 
-      // 현재 photoUrl이 "원본"이 아니라면 (=폼에서 업로드한 임시) -> 즉시 삭제 가능
       if (current && current !== original) {
         await blobDelete(current);
         setTempUploadedUrls((prev) => prev.filter((u) => u !== current));
       }
 
-      // 새 업로드 url을 폼에 반영 + temp로 기록(저장 전)
       setMemberForm((p) => ({ ...p, photoUrl: url }));
       setTempUploadedUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
 
@@ -646,7 +636,6 @@ export default function MembersBoard() {
     }
   }
 
-  // 크롭 프리뷰(원형) 업데이트 (cropPixels가 생기면)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -670,408 +659,418 @@ export default function MembersBoard() {
   // Render
   // ---------------------------
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <header className="rounded-2xl border p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">출석부</h1>
-            <p className="text-sm text-neutral-600">
-              {stats ? `오늘(${stats.todayYmd}) 출석(지각 포함): ${stats.todayCount}명` : "로딩 중..."}
-            </p>
-          </div>
-
-          <div className="flex flex-col items-start gap-2 md:items-end">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={[
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold",
-                  admin.isAdmin ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-neutral-50 text-neutral-600 border-neutral-200",
-                ].join(" ")}
-              >
-                관리자: {admin.isAdmin ? "인증됨" : "미인증"}
-                {admin.isAdmin && <span className="text-neutral-500">({adminLeftText})</span>}
-              </span>
-
-              {!admin.isAdmin ? (
-                <button onClick={() => openLoginModal()} className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50">
-                  관리자 로그인
-                </button>
-              ) : (
-                <>
-                  <button
-                    disabled={loading}
-                    onClick={openCreateMember}
-                    className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-                  >
-                    멤버 추가
-                  </button>
-                  <button
-                    disabled={loading}
-                    onClick={doLogout}
-                    className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-                  >
-                    로그아웃
-                  </button>
-                </>
-              )}
+    // ✅ 모든 기기에서 배경 통일 + 모바일 검정 배경 방지
+    <div className="min-h-screen bg-white text-neutral-900">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+        <header className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h1 className="text-xl font-semibold">출석부</h1>
+              <p className="text-sm text-neutral-600">
+                {stats ? `오늘(${stats.todayYmd}) 출석(지각 포함): ${stats.todayCount}명` : "로딩 중..."}
+              </p>
             </div>
 
-            <div className="text-sm text-neutral-700">
-              {stats && (
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  <span>이번달 평균: {stats.month.avgAttendance.toFixed(1)}명</span>
-                  <span>전체 평균: {stats.all.avgAttendance.toFixed(1)}명</span>
-                  <span className="text-neutral-500">
-                    (이번달 모임 수 {stats.month.performedDays}회 · 전체 모임 수 {stats.all.performedDays}회)
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+            <div className="flex flex-col items-start gap-2 md:items-end">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={[
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold",
+                    admin.isAdmin ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-neutral-50 text-neutral-600 border-neutral-200",
+                  ].join(" ")}
+                >
+                  관리자: {admin.isAdmin ? "인증됨" : "미인증"}
+                  {admin.isAdmin && <span className="text-neutral-500">({adminLeftText})</span>}
+                </span>
 
-      <Section
-        title="청년회"
-        subtitle="20세 이상"
-        members={youth}
-        loading={loading}
-        onCheck={checkAttendance}
-        onAbsent={markAbsent}
-        onOpen={openMemberModal}
-      />
-
-      <Section
-        title="학생회"
-        subtitle="20세 미만"
-        members={student}
-        loading={loading}
-        onCheck={checkAttendance}
-        onAbsent={markAbsent}
-        onOpen={openMemberModal}
-      />
-
-      {/* 상세 모달 */}
-      {openMemberId && (
-        <Modal onClose={closeMemberModal}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">개인 정보 / 통계</h2>
-              <div className="flex items-center gap-2">
-                {admin.isAdmin && memberStats && (
+                {!admin.isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => openLoginModal()}
+                    className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100"
+                  >
+                    관리자 로그인
+                  </button>
+                ) : (
                   <>
                     <button
-                      className="rounded-lg border px-3 py-1 text-sm hover:bg-neutral-50"
-                      onClick={openEditMemberFromStats}
+                      type="button"
+                      disabled={loading}
+                      onClick={openCreateMember}
+                      className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
                     >
-                      수정
+                      멤버 추가
                     </button>
                     <button
-                      className="rounded-lg border px-3 py-1 text-sm hover:bg-neutral-50"
-                      onClick={softDeleteMemberFromStats}
+                      type="button"
+                      disabled={loading}
+                      onClick={doLogout}
+                      className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
                     >
-                      비활성화
+                      로그아웃
                     </button>
                   </>
                 )}
-                <button className="rounded-lg border px-3 py-1 text-sm" onClick={closeMemberModal}>
+              </div>
+
+              <div className="text-sm text-neutral-700">
+                {stats && (
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>이번달 평균: {stats.month.avgAttendance.toFixed(1)}명</span>
+                    <span>전체 평균: {stats.all.avgAttendance.toFixed(1)}명</span>
+                    <span className="text-neutral-500">
+                      (이번달 모임 수 {stats.month.performedDays}회 · 전체 모임 수 {stats.all.performedDays}회)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <Section
+          title="청년회"
+          subtitle="20세 이상"
+          members={youth}
+          loading={loading}
+          onCheck={checkAttendance}
+          onAbsent={markAbsent}
+          onOpen={openMemberModal}
+        />
+
+        <Section
+          title="학생회"
+          subtitle="20세 미만"
+          members={student}
+          loading={loading}
+          onCheck={checkAttendance}
+          onAbsent={markAbsent}
+          onOpen={openMemberModal}
+        />
+
+        {/* 상세 모달 */}
+        {openMemberId && (
+          <Modal onClose={closeMemberModal}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">개인 정보 / 통계</h2>
+                <div className="flex items-center gap-2">
+                  {admin.isAdmin && memberStats && (
+                    <>
+                      <button
+                        type="button"
+                        className="rounded-lg border px-3 py-1 text-sm hover:bg-neutral-50 active:bg-neutral-100"
+                        onClick={openEditMemberFromStats}
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border px-3 py-1 text-sm hover:bg-neutral-50 active:bg-neutral-100"
+                        onClick={softDeleteMemberFromStats}
+                      >
+                        비활성화
+                      </button>
+                    </>
+                  )}
+                  <button type="button" className="rounded-lg border px-3 py-1 text-sm" onClick={closeMemberModal}>
+                    닫기
+                  </button>
+                </div>
+              </div>
+
+              {modalLoading || !memberStats ? (
+                <div className="rounded-xl border p-4 text-sm text-neutral-600">불러오는 중...</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-16 w-16 overflow-hidden rounded-2xl border">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={memberStats.member.photoUrl} alt="" className="h-full w-full object-cover" />
+                      </div>
+                      <div>
+                        <div className="text-base font-semibold">{memberStats.member.name}</div>
+                        <div className="text-sm text-neutral-600">
+                          {memberStats.member.age}세 · {fmtYmd(memberStats.member.birthDate)}
+                        </div>
+                        <div className="text-sm text-neutral-600">{memberStats.member.phone}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                      <Stat label="누적 출석 포인트" value={`${memberStats.points.total.toLocaleString()}P`} />
+                      <Stat label="올해 출석 포인트" value={`${memberStats.points.yearTotal.toLocaleString()}P`} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border p-4">
+                    <div className="grid gap-2 text-sm">
+                      <div className="rounded-xl border p-3">
+                        <div className="font-medium">이번달</div>
+                        <div className="mt-1 text-neutral-700">
+                          출석: {memberStats.attendance.month.present}회 · 지각: {memberStats.attendance.month.late}회
+                        </div>
+                        <div className="text-neutral-700">모임 수: {memberStats.attendance.month.meetingDays}회</div>
+                        <div className="text-neutral-700">출석율: {pct(memberStats.attendance.month.rate)}</div>
+                      </div>
+
+                      <div className="rounded-xl border p-3">
+                        <div className="font-medium">올해</div>
+                        <div className="mt-1 text-neutral-700">
+                          출석: {memberStats.attendance.year.present}회 · 지각: {memberStats.attendance.year.late}회
+                        </div>
+                        <div className="text-neutral-700">모임 수: {memberStats.attendance.year.meetingDays}회</div>
+                        <div className="text-neutral-700">출석율: {pct(memberStats.attendance.year.rate)}</div>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs text-neutral-500">* 결석은 “기록 없음”으로 처리됩니다. (오늘 기준만 수정 가능)</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
+
+        {/* 멤버 추가/수정 모달 */}
+        {memberForm.open && (
+          <Modal onClose={closeMemberForm}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">{memberForm.mode === "create" ? "멤버 추가" : "멤버 수정"}</h2>
+                <button type="button" className="rounded-lg border px-3 py-1 text-sm" onClick={closeMemberForm}>
                   닫기
                 </button>
               </div>
-            </div>
 
-            {modalLoading || !memberStats ? (
-              <div className="rounded-xl border p-4 text-sm text-neutral-600">불러오는 중...</div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-16 w-16 overflow-hidden rounded-2xl border">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={memberStats.member.photoUrl} alt="" className="h-full w-full object-cover" />
-                    </div>
-                    <div>
-                      <div className="text-base font-semibold">{memberStats.member.name}</div>
-                      <div className="text-sm text-neutral-600">
-                        {memberStats.member.age}세 · {fmtYmd(memberStats.member.birthDate)}
-                      </div>
-                      <div className="text-sm text-neutral-600">{memberStats.member.phone}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                    <Stat label="누적 출석 포인트" value={`${memberStats.points.total.toLocaleString()}P`} />
-                    <Stat label="올해 출석 포인트" value={`${memberStats.points.yearTotal.toLocaleString()}P`} />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border p-4">
-                  <div className="grid gap-2 text-sm">
-                    <div className="rounded-xl border p-3">
-                      <div className="font-medium">이번달</div>
-                      <div className="mt-1 text-neutral-700">
-                        출석: {memberStats.attendance.month.present}회 · 지각: {memberStats.attendance.month.late}회
-                      </div>
-                      <div className="text-neutral-700">모임 수: {memberStats.attendance.month.meetingDays}회</div>
-                      <div className="text-neutral-700">출석율: {pct(memberStats.attendance.month.rate)}</div>
-                    </div>
-
-                    <div className="rounded-xl border p-3">
-                      <div className="font-medium">올해</div>
-                      <div className="mt-1 text-neutral-700">
-                        출석: {memberStats.attendance.year.present}회 · 지각: {memberStats.attendance.year.late}회
-                      </div>
-                      <div className="text-neutral-700">모임 수: {memberStats.attendance.year.meetingDays}회</div>
-                      <div className="text-neutral-700">출석율: {pct(memberStats.attendance.year.rate)}</div>
-                    </div>
-                  </div>
-
-                  <p className="mt-3 text-xs text-neutral-500">* 결석은 “기록 없음”으로 처리됩니다. (오늘 기준만 수정 가능)</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
-
-      {/* 멤버 추가/수정 모달 */}
-      {memberForm.open && (
-        <Modal onClose={closeMemberForm}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{memberForm.mode === "create" ? "멤버 추가" : "멤버 수정"}</h2>
-              <button className="rounded-lg border px-3 py-1 text-sm" onClick={closeMemberForm}>
-                닫기
-              </button>
-            </div>
-
-            <div className="grid gap-3 rounded-2xl border p-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <label className="text-sm text-neutral-600">이름 *</label>
-                <input
-                  value={memberForm.name}
-                  onChange={(e) => setMemberForm((p) => ({ ...p, name: e.target.value }))}
-                  className="rounded-xl border px-3 py-2 text-sm"
-                  placeholder="홍길동"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm text-neutral-600">핸드폰 번호 *</label>
-                <input
-                  value={memberForm.phone}
-                  onChange={(e) => setMemberForm((p) => ({ ...p, phone: e.target.value }))}
-                  className="rounded-xl border px-3 py-2 text-sm"
-                  placeholder="010-1234-5678"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm text-neutral-600">생년월일(YYYY-MM-DD) *</label>
-                <input
-                  value={memberForm.birthDateYmd}
-                  onChange={(e) => setMemberForm((p) => ({ ...p, birthDateYmd: e.target.value }))}
-                  className="rounded-xl border px-3 py-2 text-sm"
-                  placeholder="2004-03-21"
-                />
-                <div className="text-xs text-neutral-500">* 한국나이 계산은 서버 기준입니다.</div>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm text-neutral-600">사진 업로드 *</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="block w-full text-sm"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    onPickPhoto(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-                {!memberForm.photoUrl && <div className="text-xs text-neutral-500">* 업로드 후 크롭 완료해야 저장 가능</div>}
-              </div>
-
-              <div className="md:col-span-2">
-                <div className="flex items-start gap-3 rounded-2xl border p-3">
-                  <div className="h-20 w-20 overflow-hidden rounded-2xl border bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {memberForm.photoUrl ? (
-                      <img src={memberForm.photoUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">미리보기</div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 text-sm text-neutral-700">
-                    <div className="font-semibold">사진 미리보기</div>
-                    <div className="mt-1 text-xs text-neutral-500">
-                      * 업로드 후 서버에서 webp(예: 512x512)로 저장된 URL이 들어갑니다.
-                    </div>
-                  </div>
-
-                  <div className="h-20 w-20 overflow-hidden rounded-full border bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {memberForm.photoUrl ? (
-                      <img src={memberForm.photoUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-[10px] text-neutral-400">원형</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {memberFormErr && (
-                <div className="md:col-span-2 rounded-xl border bg-neutral-50 p-3 text-sm text-neutral-700">{memberFormErr}</div>
-              )}
-
-              <div className="md:col-span-2 flex items-center justify-end gap-2">
-                <button className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50" onClick={closeMemberForm}>
-                  취소
-                </button>
-                <button
-                  disabled={memberFormSaving}
-                  className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-                  onClick={saveMember}
-                >
-                  {memberFormSaving ? "저장 중..." : "저장"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* 관리자 로그인 모달 */}
-      {loginOpen && (
-        <Modal onClose={() => setLoginOpen(false)}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">관리자 로그인</h2>
-              <button className="rounded-lg border px-3 py-1 text-sm" onClick={() => setLoginOpen(false)}>
-                닫기
-              </button>
-            </div>
-
-            <div className="rounded-2xl border p-4">
-              <div className="grid gap-3">
-                <div className="grid gap-1">
-                  <label className="text-sm text-neutral-600">아이디</label>
+              <div className="grid gap-3 rounded-2xl border p-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <label className="text-sm text-neutral-600">이름 *</label>
                   <input
-                    ref={usernameRef}
+                    value={memberForm.name}
+                    onChange={(e) => setMemberForm((p) => ({ ...p, name: e.target.value }))}
                     className="rounded-xl border px-3 py-2 text-sm"
-                    placeholder="admin"
-                    autoComplete="username"
+                    placeholder="홍길동"
                   />
                 </div>
 
-                <div className="grid gap-1">
-                  <label className="text-sm text-neutral-600">비밀번호</label>
+                <div className="grid gap-2">
+                  <label className="text-sm text-neutral-600">핸드폰 번호 *</label>
                   <input
-                    ref={passwordRef}
-                    type="password"
+                    value={memberForm.phone}
+                    onChange={(e) => setMemberForm((p) => ({ ...p, phone: e.target.value }))}
                     className="rounded-xl border px-3 py-2 text-sm"
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") doLogin();
+                    placeholder="010-1234-5678"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-sm text-neutral-600">생년월일(YYYY-MM-DD) *</label>
+                  <input
+                    value={memberForm.birthDateYmd}
+                    onChange={(e) => setMemberForm((p) => ({ ...p, birthDateYmd: e.target.value }))}
+                    className="rounded-xl border px-3 py-2 text-sm"
+                    placeholder="2004-03-21"
+                  />
+                  <div className="text-xs text-neutral-500">* 한국나이 계산은 서버 기준입니다.</div>
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-sm text-neutral-600">사진 업로드 *</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="block w-full text-sm"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      onPickPhoto(f);
+                      e.currentTarget.value = "";
                     }}
                   />
+                  {!memberForm.photoUrl && <div className="text-xs text-neutral-500">* 업로드 후 크롭 완료해야 저장 가능</div>}
                 </div>
 
-                {loginErr && <div className="rounded-xl border bg-neutral-50 p-3 text-sm text-neutral-700">{loginErr}</div>}
+                <div className="md:col-span-2">
+                  <div className="flex items-start gap-3 rounded-2xl border p-3">
+                    <div className="h-20 w-20 overflow-hidden rounded-2xl border bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {memberForm.photoUrl ? (
+                        <img src={memberForm.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">미리보기</div>
+                      )}
+                    </div>
 
-                <button
-                  disabled={loginLoading}
-                  onClick={doLogin}
-                  className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  {loginLoading ? "로그인 중..." : "로그인"}
-                </button>
-              </div>
-            </div>
+                    <div className="flex-1 text-sm text-neutral-700">
+                      <div className="font-semibold">사진 미리보기</div>
+                      <div className="mt-1 text-xs text-neutral-500">
+                        * 업로드 후 서버에서 webp(예: 512x512)로 저장된 URL이 들어갑니다.
+                      </div>
+                    </div>
 
-            <p className="text-xs text-neutral-500">* 로그인 후 20분 동안 인증이 유지됩니다.</p>
-          </div>
-        </Modal>
-      )}
-
-      {/* 크롭 모달 */}
-      {cropOpen && cropImageSrc && (
-        <Modal
-          onClose={() => {
-            setCropOpen(false);
-          }}
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">사진 크롭</h2>
-              <button className="rounded-lg border px-3 py-1 text-sm" onClick={() => setCropOpen(false)}>
-                닫기
-              </button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="relative h-[360px] w-full overflow-hidden rounded-2xl border bg-black">
-                <Cropper
-                  image={cropImageSrc}
-                  crop={crop}
-                  zoom={zoom}
-                  aspect={1}
-                  onCropChange={setCrop}
-                  onZoomChange={setZoom}
-                  onCropComplete={(_, pixels) => setCropPixels(pixels as CropPixels)}
-                />
-              </div>
-
-              <div className="rounded-2xl border p-4">
-                <div className="text-sm font-semibold">원형 미리보기</div>
-                <div className="mt-3 flex items-center gap-4">
-                  <div className="h-28 w-28 overflow-hidden rounded-full border bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {cropPreviewUrl ? (
-                      <img src={cropPreviewUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <img src={cropImageSrc} alt="" className="h-full w-full object-cover opacity-70" />
-                    )}
-                  </div>
-                  <div className="flex-1 text-xs text-neutral-500">
-                    * 회전 없음<br />
-                    * 크롭 후 업로드하면 서버에서 webp로 저장됩니다.
+                    <div className="h-20 w-20 overflow-hidden rounded-full border bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {memberForm.photoUrl ? (
+                        <img src={memberForm.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-[10px] text-neutral-400">원형</div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4">
-                  <label className="text-sm text-neutral-600">줌</label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={3}
-                    step={0.01}
-                    value={zoom}
-                    onChange={(e) => setZoom(Number(e.target.value))}
-                    className="mt-2 w-full"
-                  />
-                </div>
+                {memberFormErr && (
+                  <div className="md:col-span-2 rounded-xl border bg-neutral-50 p-3 text-sm text-neutral-700">{memberFormErr}</div>
+                )}
 
-                <div className="mt-4 flex justify-end gap-2">
-                  <button className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50" onClick={() => setCropOpen(false)}>
+                <div className="md:col-span-2 flex items-center justify-end gap-2">
+                  <button type="button" className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50" onClick={closeMemberForm}>
                     취소
                   </button>
                   <button
-                    disabled={uploading}
+                    type="button"
+                    disabled={memberFormSaving}
                     className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-                    onClick={confirmCropAndUpload}
+                    onClick={saveMember}
                   >
-                    {uploading ? "업로드 중..." : "크롭 완료"}
+                    {memberFormSaving ? "저장 중..." : "저장"}
                   </button>
                 </div>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+
+        {/* 관리자 로그인 모달 */}
+        {loginOpen && (
+          <Modal onClose={() => setLoginOpen(false)}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">관리자 로그인</h2>
+                <button type="button" className="rounded-lg border px-3 py-1 text-sm" onClick={() => setLoginOpen(false)}>
+                  닫기
+                </button>
+              </div>
+
+              <div className="rounded-2xl border p-4">
+                <div className="grid gap-3">
+                  <div className="grid gap-1">
+                    <label className="text-sm text-neutral-600">아이디</label>
+                    <input
+                      ref={usernameRef}
+                      className="rounded-xl border px-3 py-2 text-sm"
+                      placeholder="admin"
+                      autoComplete="username"
+                    />
+                  </div>
+
+                  <div className="grid gap-1">
+                    <label className="text-sm text-neutral-600">비밀번호</label>
+                    <input
+                      ref={passwordRef}
+                      type="password"
+                      className="rounded-xl border px-3 py-2 text-sm"
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") doLogin();
+                      }}
+                    />
+                  </div>
+
+                  {loginErr && <div className="rounded-xl border bg-neutral-50 p-3 text-sm text-neutral-700">{loginErr}</div>}
+
+                  <button
+                    type="button"
+                    disabled={loginLoading}
+                    onClick={doLogin}
+                    className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    {loginLoading ? "로그인 중..." : "로그인"}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-neutral-500">* 로그인 후 20분 동안 인증이 유지됩니다.</p>
+            </div>
+          </Modal>
+        )}
+
+        {/* 크롭 모달 */}
+        {cropOpen && cropImageSrc && (
+          <Modal onClose={() => setCropOpen(false)}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">사진 크롭</h2>
+                <button type="button" className="rounded-lg border px-3 py-1 text-sm" onClick={() => setCropOpen(false)}>
+                  닫기
+                </button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="relative h-[360px] w-full overflow-hidden rounded-2xl border bg-black">
+                  <Cropper
+                    image={cropImageSrc}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={1}
+                    onCropChange={setCrop}
+                    onZoomChange={setZoom}
+                    onCropComplete={(_, pixels) => setCropPixels(pixels as CropPixels)}
+                  />
+                </div>
+
+                <div className="rounded-2xl border p-4">
+                  <div className="text-sm font-semibold">원형 미리보기</div>
+                  <div className="mt-3 flex items-center gap-4">
+                    <div className="h-28 w-28 overflow-hidden rounded-full border bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {cropPreviewUrl ? (
+                        <img src={cropPreviewUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <img src={cropImageSrc} alt="" className="h-full w-full object-cover opacity-70" />
+                      )}
+                    </div>
+                    <div className="flex-1 text-xs text-neutral-500">
+                      * 회전 없음<br />
+                      * 크롭 후 업로드하면 서버에서 webp로 저장됩니다.
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="text-sm text-neutral-600">줌</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={3}
+                      step={0.01}
+                      value={zoom}
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="mt-2 w-full"
+                    />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button type="button" className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50" onClick={() => setCropOpen(false)}>
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                      onClick={confirmCropAndUpload}
+                    >
+                      {uploading ? "업로드 중..." : "크롭 완료"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </div>
     </div>
   );
 }
@@ -1106,7 +1105,17 @@ function Section({
       <div className="flex gap-3 overflow-x-auto pb-2">
         {members.map((m) => (
           <div key={m.id} className="w-[280px] shrink-0 rounded-2xl border bg-white p-3 shadow-sm">
-            <button className="w-full text-left" onClick={() => onOpen(m.id)}>
+            {/* ✅ button 중첩 제거: 카드 전체 클릭 영역을 div로 */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpen(m.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onOpen(m.id);
+              }}
+              className="w-full cursor-pointer text-left select-none"
+              style={{ WebkitTapHighlightColor: "transparent" }} // iOS 탭 하이라이트/오작동 완화
+            >
               <div className="relative">
                 <div className="h-40 w-full overflow-hidden rounded-2xl border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1138,27 +1147,40 @@ function Section({
                   <Pill label="올해 출석" value={`${m.yearAttendanceCount}회`} />
                 </div>
               </div>
-            </button>
+            </div>
 
+            {/* ✅ 카드 클릭과 버튼 클릭이 섞이지 않게 stopPropagation */}
             <div className="mt-3 grid grid-cols-3 gap-2">
               <button
+                type="button"
                 disabled={loading}
-                onClick={() => onCheck(m.id, "PRESENT")}
-                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCheck(m.id, "PRESENT");
+                }}
+                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
               >
                 출석
               </button>
               <button
+                type="button"
                 disabled={loading}
-                onClick={() => onCheck(m.id, "LATE")}
-                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCheck(m.id, "LATE");
+                }}
+                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
               >
                 지각
               </button>
               <button
+                type="button"
                 disabled={loading}
-                onClick={() => onAbsent(m.id)}
-                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAbsent(m.id);
+                }}
+                className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
               >
                 결석
               </button>
@@ -1193,7 +1215,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50">
-      <button className="absolute inset-0 bg-black/40" onClick={onClose} aria-label="close overlay" />
+      {/* ✅ overlay를 button이 아니라 div로 (모바일에서 포커스/중첩 이슈 예방) */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-label="close overlay" role="button" tabIndex={0} />
       <div className="absolute left-1/2 top-1/2 w-[min(920px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-4 shadow-xl md:p-6">
         {children}
       </div>
