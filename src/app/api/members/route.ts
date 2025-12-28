@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getYearStartKst } from "@/lib/kst";
 import { requireAdminOr401 } from "@/lib/require-admin";
@@ -17,7 +18,16 @@ export async function GET() {
   const todayYmd = getKstYmdKey();
   const todayDate = kstYmdToUtcDate(todayYmd);
 
-  const members = await prisma.member.findMany({
+  const members: Prisma.MemberGetPayload<{
+    select: {
+      id: true;
+      name: true;
+      phone: true;
+      birthDate: true;
+      photoUrl: true;
+      isActive: true;
+    };
+  }>[] = await prisma.member.findMany({
     where: { isActive: true },
     select: {
       id: true,
