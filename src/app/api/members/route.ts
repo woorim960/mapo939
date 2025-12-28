@@ -1,15 +1,35 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getYearStartKst } from "@/lib/kst";
 import { requireAdminOr401 } from "@/lib/require-admin";
 import { getKstYmdKey, kstYmdToUtcDate } from "@/lib/kst-attendance";
 
+type MemberRow = {
+  id: string;
+  name: string;
+  phone: string | null;
+  birthDate: Date | null;
+  photoUrl: string | null;
+  isActive: boolean;
+};
+
+type CountRow = { memberId: string; _count: { _all: number } };
+type SumRow = { memberId: string; _sum: { points: number | null } };
+type TodayRow = { memberId: string; status: "PRESENT" | "LATE" };
+
+type TodayStatus = "PRESENT" | "LATE" | "ABSENT";
+
+type MemberWithStats = MemberRow & {
+  yearAttendanceCount: number;
+  totalPoints: number;
+  todayStatus: TodayStatus;
+};
+
 /**
  * GET /api/members
  * - 누구나 조회 가능
  * - isActive=true만 반환
- * - yearAttendanceCount(올해 출석/지각 횟수) 내림차순 정렬
+ * - (요청대로) totalPoints(누적 포인트) 내림차순 정렬
  */
 export async function GET() {
   const yearStart = getYearStartKst();
@@ -18,16 +38,8 @@ export async function GET() {
   const todayYmd = getKstYmdKey();
   const todayDate = kstYmdToUtcDate(todayYmd);
 
-  const members: Prisma.MemberGetPayload<{
-    select: {
-      id: true;
-      name: true;
-      phone: true;
-      birthDate: true;
-      photoUrl: true;
-      isActive: true;
-    };
-  }>[] = await prisma.member.findMany({
+  // ✅ 활성 멤버 기본 정보
+  const members: MemberRow[] = await prisma.member.findMany({
     where: { isActive: true },
     select: {
       id: true,
@@ -40,51 +52,46 @@ export async function GET() {
   });
 
   // ✅ 올해 출석(출석/지각) 횟수
-  const counts = await prisma.attendance.groupBy({
+  const counts = (await prisma.attendance.groupBy({
     by: ["memberId"],
     where: {
       date: { gte: yearStart },
       status: { in: ["PRESENT", "LATE"] },
     },
     _count: { _all: true },
-  });
-  const countMap = new Map<string, number>(
-    counts.map((c: { memberId: string; _count: { _all: number } }) => [c.memberId, c._count._all])
-  );
+  })) as unknown as CountRow[];
+
+  const countMap = new Map<string, number>(counts.map((c) => [c.memberId, c._count._all]));
 
   // ✅ 누적 포인트
-  const sums = await prisma.attendance.groupBy({
+  const sums = (await prisma.attendance.groupBy({
     by: ["memberId"],
     where: { status: { in: ["PRESENT", "LATE"] } },
     _sum: { points: true },
-  });
-  const sumMap = new Map<string, number>(
-    sums.map((s: { memberId: string; _sum: { points: number | null } }) => [s.memberId, s._sum.points ?? 0])
-  );
+  })) as unknown as SumRow[];
+
+  const sumMap = new Map<string, number>(sums.map((s) => [s.memberId, s._sum.points ?? 0]));
 
   // ✅ 오늘 상태(PRESENT/LATE/ABSENT) 계산용: 오늘 날짜의 출석 기록만 조회
-  const todayRows = await prisma.attendance.findMany({
+  const todayRows = (await prisma.attendance.findMany({
     where: { date: todayDate },
     select: { memberId: true, status: true },
-  });
-  const todayMap = new Map<string, "PRESENT" | "LATE">(
-    todayRows.map((r: { memberId: string; status: "PRESENT" | "LATE" }) => [r.memberId, r.status])
-  );
+  })) as unknown as TodayRow[];
 
-  const result = members
+  const todayMap = new Map<string, TodayRow["status"]>(todayRows.map((r) => [r.memberId, r.status]));
+
+  const result: MemberWithStats[] = members
     .map((m) => ({
       ...m,
       yearAttendanceCount: countMap.get(m.id) ?? 0,
       totalPoints: sumMap.get(m.id) ?? 0,
-      todayStatus: (todayMap.get(m.id) ?? "ABSENT") as "PRESENT" | "LATE" | "ABSENT",
+      todayStatus: (todayMap.get(m.id) ?? "ABSENT") as TodayStatus,
     }))
     // ✅ 완전히 포인트만 기준으로 내림차순 정렬
     .sort((a, b) => b.totalPoints - a.totalPoints);
 
   return NextResponse.json({ members: result, todayYmd });
 }
-
-
 
 /**
  * POST /api/members
@@ -95,12 +102,14 @@ export async function POST(req: Request) {
   const { response } = await requireAdminOr401();
   if (response) return response;
 
-  const body = await req.json().catch(() => ({} as any));
+  const body: unknown = await req.json().catch(() => ({}));
 
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  const birthDateStr = typeof body.birthDate === "string" ? body.birthDate : "";
-  const photoUrl = typeof body.photoUrl === "string" ? body.photoUrl.trim() : "";
+  const data = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+
+  const name = typeof data.name === "string" ? data.name.trim() : "";
+  const phone = typeof data.phone === "string" ? data.phone.trim() : "";
+  const birthDateStr = typeof data.birthDate === "string" ? data.birthDate : "";
+  const photoUrl = typeof data.photoUrl === "string" ? data.photoUrl.trim() : "";
 
   if (!name || !phone || !birthDateStr || !photoUrl) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
@@ -111,7 +120,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_birthDate" }, { status: 400 });
   }
 
-  const member = await prisma.member.create({
+  const member: MemberRow = await prisma.member.create({
     data: { name, phone, birthDate, photoUrl, isActive: true },
     select: {
       id: true,
