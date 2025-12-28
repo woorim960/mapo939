@@ -57,7 +57,9 @@ export async function GET() {
     where: { date: todayDate },
     select: { memberId: true, status: true },
   });
-  const todayMap = new Map(todayRows.map((r) => [r.memberId, r.status])); // "PRESENT" | "LATE"
+  const todayMap = new Map<string, "PRESENT" | "LATE">(
+    todayRows.map((r: { memberId: string; status: "PRESENT" | "LATE" }) => [r.memberId, r.status])
+  );
 
   const result = members
     .map((m) => ({
