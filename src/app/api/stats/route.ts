@@ -41,7 +41,7 @@ export async function GET() {
     _count: { _all: true },
   });
 
-  const monthTotalAttendance = monthGroup.reduce((sum, g) => sum + g._count._all, 0);
+  const monthTotalAttendance = monthGroup.reduce<number>((sum, g) => sum + g._count._all, 0);
   const monthAvg = monthPerformedDayCount === 0 ? 0 : monthTotalAttendance / monthPerformedDayCount;
 
   // 전체 수행 일자 수
