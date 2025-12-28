@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+}
+
+model Admin {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  sessions AdminSession[]
+
+  @@map("admins")
+}
+
+model Member {
+  id        String   @id @default(uuid())
+  name      String
+  birthDate DateTime
+  phone     String
+  photoUrl  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendances Attendance[]
+
+  @@index([isActive, birthDate])
+  @@map("members")
+}
+
+model Attendance {
+  id        String           @id @default(uuid())
+  memberId  String
+  date      DateTime
+  status    AttendanceStatus
+  points    Int
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@unique([memberId, date])
+  @@index([date])
+  @@index([memberId, date])
+  @@map("attendance")
+}
+
+model AdminSession {
+  id        String   @id @default(uuid())
+  adminId   String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@map("admin_sessions")
+}
