@@ -38,7 +38,9 @@ export async function GET() {
     },
     _count: { _all: true },
   });
-  const countMap = new Map(counts.map((c) => [c.memberId, c._count._all]));
+  const countMap = new Map<string, number>(
+    counts.map((c: { memberId: string; _count: { _all: number } }) => [c.memberId, c._count._all])
+  );
 
   // ✅ 누적 포인트
   const sums = await prisma.attendance.groupBy({
@@ -46,7 +48,9 @@ export async function GET() {
     where: { status: { in: ["PRESENT", "LATE"] } },
     _sum: { points: true },
   });
-  const sumMap = new Map(sums.map((s) => [s.memberId, s._sum.points ?? 0]));
+  const sumMap = new Map<string, number>(
+    sums.map((s: { memberId: string; _sum: { points: number | null } }) => [s.memberId, s._sum.points ?? 0])
+  );
 
   // ✅ 오늘 상태(PRESENT/LATE/ABSENT) 계산용: 오늘 날짜의 출석 기록만 조회
   const todayRows = await prisma.attendance.findMany({
