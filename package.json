@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:members": "tsx prisma/seed-members.ts",
-    "prod": "npx vercel --prod"
+    "prod": "npx vercel --prod",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

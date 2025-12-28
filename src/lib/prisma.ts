@@ -1,21 +1,19 @@
-import { PrismaClient } from "@prisma/client";
+// src/lib/prisma.ts
 import { PrismaNeon } from "@prisma/adapter-neon";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+// ✅ 일부 환경에서 named export(PrismaClient)가 깨지는 케이스가 있어 default import로 우회
+import PrismaPkg from "@prisma/client";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set");
-}
+type PrismaClientType = InstanceType<(typeof PrismaPkg)["PrismaClient"]>;
 
-// ✅ Pool을 직접 만들지 말고, config로 adapter 생성
-const adapter = new PrismaNeon({ connectionString });
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClientType };
 
-export const prisma =
+export const prisma: PrismaClientType =
   globalForPrisma.prisma ??
-  new PrismaClient({
-    adapter,
-    log: ["error"],
+  new PrismaPkg.PrismaClient({
+    adapter: new PrismaNeon({
+      connectionString: process.env.DATABASE_URL!,
+    }),
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
