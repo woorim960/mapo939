@@ -1049,7 +1049,7 @@ export default function LiarPage() {
                   </button>
                 </div>
 
-                <div className="text-xs text-gray-500">이번 판 초기화는 점수는 유지합니다.</div>
+                <div className="text-xs text-gray-500">이번 판 초기화는 점수는 유지됩니다.</div>
               </section>
             ) : null}
 
