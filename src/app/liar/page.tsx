@@ -251,35 +251,46 @@ export default function LiarPage() {
   }, [phase, joinedCount, roleTouched]);
 
   useEffect(() => {
-    if (!publicState) return;
+  if (!publicState) return;
 
-    // ✅ VOTING으로 "이동 중" 표시를 잠깐 유지하고,
-    // ✅ DISCUSS/REVEAL/RESULT로 돌아오면 다시 누를 수 있게 풀어준다.
-    if (
-      publicState.phase === "DISCUSS" ||
-      publicState.phase === "REVEAL" ||
-      publicState.phase === "RESULT" ||
-      publicState.phase === "PREP"
-    ) {
-      setGoVoteClicked(false);
-    }
+  const ph = publicState.phase;
 
-    // 기존 로직 유지
-    if (publicState.phase === "PREP") {
-      setMyVotedTargetId("");
-      setSelectedVoteTargetId("");
-      setVoteMode(false);
-      return;
-    }
+  // ✅ PREP로 돌아가면: 완전 초기화
+  if (ph === "PREP") {
+    setMyVotedTargetId("");
+    setSelectedVoteTargetId("");
+    setVoteMode(false);
+    setGoVoteClicked(false);
+    return;
+  }
 
-    if (publicState.phase === "TIE_DISCUSS") {
-      setMyVotedTargetId("");
-      setSelectedVoteTargetId("");
-      setVoteMode(false);
-      setGoVoteClicked(false);
-      return;
-    }
-  }, [publicState?.phase]);
+  // ✅ 동점 재논의 진입: 재투표 준비
+  if (ph === "TIE_DISCUSS") {
+    setMyVotedTargetId("");
+    setSelectedVoteTargetId("");
+    setVoteMode(false);
+    setGoVoteClicked(false);
+    return;
+  }
+
+  // ✅ 핵심: 게임이 안 끝나서 DISCUSS로 복귀하는 경우에도 재투표 가능해야 함
+  if (ph === "DISCUSS") {
+    setMyVotedTargetId("");
+    setSelectedVoteTargetId("");
+    setVoteMode(false);
+    setGoVoteClicked(false);
+    return;
+  }
+
+  // ✅ REVEAL / RESULT / LOBBY 등으로 이동하면
+  // "이동 중…" 상태(goVoteClicked)만 풀어주기 (원하면 여기서 더 초기화해도 됨)
+  if (ph === "REVEAL" || ph === "RESULT" || ph === "LOBBY") {
+    setGoVoteClicked(false);
+  }
+
+  // ✅ VOTING일 때는 goVoteClicked 유지해서 "방장이 눌렀다" 표시 가능
+}, [publicState?.phase]);
+
 
 
   const isHost = useMemo(() => {
@@ -351,30 +362,6 @@ export default function LiarPage() {
 
     // 역할 입력은 라운드 바뀌면 그냥 유지(원하면 초기화로 바꿔도 됨)
   }, [publicState?.round.index]);
-
-  useEffect(() => {
-    if (!publicState) return;
-
-    // PREP로 돌아가면 초기화
-    if (publicState.phase === "PREP") {
-      setMyVotedTargetId("");
-      setSelectedVoteTargetId("");
-      setVoteMode(false);
-      setGoVoteClicked(false);
-      return;
-    }
-
-    // ✅ 동점 재논의로 바뀌면: 투표 관련 완전 초기화 + go vote 다시 활성
-    if (publicState.phase === "TIE_DISCUSS") {
-      setMyVotedTargetId("");
-      setSelectedVoteTargetId("");
-      setVoteMode(false);
-      setGoVoteClicked(false);
-      return;
-    }
-
-    // VOTING 진입 시 goVoteClicked은 유지(방장이 눌렀음을 표시)
-  }, [publicState?.phase]);
 
   // ✅ “투표하러 가기”는 방장만 노출 (요구사항)
   const canShowGoVoteButton = useMemo(() => {

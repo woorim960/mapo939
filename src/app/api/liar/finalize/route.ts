@@ -131,6 +131,7 @@ export async function POST(req: Request): Promise<Response> {
         version: (state.version ?? 0) + 1,
         round: {
           ...round,
+          index: (round.index ?? 0) + 1,
           votesByVoterId: {}, // ✅ 다음 투표 대비 초기화
           discussEndsAt: Date.now() + 180_000, // ✅ 다시 3분 토론(원하면 값 조절)
           tieDiscussEndsAt: null,
