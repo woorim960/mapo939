@@ -199,9 +199,12 @@ export default function LiarPage() {
   const [roleConfigErr, setRoleConfigErr] = useState<string>("");
   const [resetClicked, setResetClicked] = useState(false);
 
-
   // ✅ 사용자가 직접 건드렸는지(자동 기본값 덮어쓰기 방지)
   const [roleTouched, setRoleTouched] = useState<boolean>(false);
+
+  // ✅ 게임 방법
+  const [showHowTo, setShowHowTo] = useState(false);
+
 
   /** ✅ 서버 start와 동일한 기본 배치 */
   function defaultRoleCounts(n: number): { liar: number; troll: number; audience: number } {
@@ -865,6 +868,9 @@ export default function LiarPage() {
 
   return (
     <main className="min-h-screen bg-gray-100 p-4">
+      {/* 게임 방법 모달 */}
+      <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} /> 
+
       <div className="mx-auto max-w-md space-y-3">
         {/* 간단 토스트 */}
         {toast ? (
@@ -877,17 +883,29 @@ export default function LiarPage() {
         ) : null}
 
         <div className="flex items-center justify-between">
-          <button
-            className="text-xs underline text-gray-600 disabled:opacity-50"
-            onClick={resetAll}
-            disabled={busy}
-            title="닉네임/점수/게임상태까지 모두 삭제"
-          >
-            전체 초기화
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              className="text-xs underline text-gray-600 disabled:opacity-50"
+              onClick={resetAll}
+              disabled={busy}
+              title="닉네임/점수/게임상태까지 모두 삭제"
+            >
+              전체 초기화
+            </button>
+
+            <button
+              type="button"
+              className="text-xs underline text-gray-600 hover:text-gray-800"
+              onClick={() => setShowHowTo(true)}
+              title="게임 방법 보기"
+            >
+              게임 방법
+            </button>
+          </div>
 
           <div className="text-[11px] text-gray-500">버전 {publicState?.version ?? 0}</div>
         </div>
+
 
         {/* 상단 상태 카드 */}
         <header className="rounded-xl border bg-white p-4">
@@ -1481,3 +1499,156 @@ function AnswerBox({
     </section>
   );
 }
+
+function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      onMouseDown={onClose} // 바깥 클릭 닫기
+      role="dialog"
+      aria-modal="true"
+      aria-label="게임 방법"
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white shadow-xl"
+        onMouseDown={e => e.stopPropagation()} // 내부 클릭은 닫기 방지
+      >
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="text-sm font-bold">🕵️‍♂️ 라이어 게임 방법</div>
+          <button className="text-xs underline text-gray-600" onClick={onClose}>
+            닫기
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-auto px-4 py-4 space-y-4">
+          {/* ✅ 최상단 한 줄 카피 */}
+          <div className="relative overflow-hidden rounded-2xl border border-gray-900 bg-gradient-to-r from-gray-900 to-gray-800 px-4 py-3 text-center">
+            {/* 은은한 움직이는 라인 */}
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+            <div className="relative z-10 text-sm font-extrabold tracking-wide text-white">
+              잡거나, 숨거나, 일부러 죽거나
+            </div>
+          </div>
+
+          {/* ✅ 최상단: 게임 목표(캐주얼) */}
+          <section className="rounded-xl border bg-gray-50 p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">🎯 게임 목표</div>
+
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">관객</div>
+                <div className="mt-1 text-sm text-gray-700">→ 수상한 답변을 골라 라이어를 잡아내세요</div>
+              </div>
+
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">라이어</div>
+                <div className="mt-1 text-sm text-gray-700">→ 들키지 말고 버티세요</div>
+                <div className="mt-1 text-sm text-gray-700">→ 라이어 중 한 명이라도 살아남으면 승리!</div>
+              </div>
+
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">트롤</div>
+                <div className="mt-1 text-sm text-gray-700">→ 인생은 혼자, 열심히 눈에 띄세요</div>
+                <div className="mt-1 text-sm text-gray-700">→ 투표로 죽으면 보너스 점수 획득!</div>
+              </div>
+
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">최종 목표</div>
+                <div className="mt-1 text-sm text-gray-700">누가 먼저 300점을 찍느냐가 진짜 승자</div>
+              </div>
+            </div>
+          </section>
+
+          {/* 기존 섹션들 유지 */}
+          <section className="rounded-xl border bg-gray-50 p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">🎭 역할 세부 설명</div>
+
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">👥 관객</div>
+                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                  <li>질문을 알고 있음</li>
+                  <li>라이어를 찾아내는 것이 목표</li>
+                  <li>
+                    <span className="font-semibold">라이어가 모두 죽으면 관객 승리</span>(+100점)
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">🕵️ 라이어</div>
+                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                  <li>질문을 모른 채 정해진 범위 안에서 답변</li>
+                  <li>관객인 척 연기하며 살아남아야 함</li>
+                  <li>
+                    <span className="font-semibold">라이어 수 = 관객 수</span>가 되면 라이어 승리(+100점)
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-sm font-semibold">🤡 트롤</div>
+                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                  <li>질문을 알고 있음</li>
+                  <li>투표로 죽는 것이 목표</li>
+                  <li>
+                    <span className="font-semibold">죽으면 본인만 보너스 점수</span> 획득(+100점)
+                  </li>
+                  <li>트롤은 게임 승패에 포함되지 않음</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">▶️ 게임 진행</div>
+            <ol className="list-decimal pl-5 text-sm text-gray-700 space-y-1">
+              <li>질문 공개</li>
+              <li>답변 입력</li>
+              <li>토론</li>
+              <li>투표 → 1명 탈락</li>
+            </ol>
+            <div className="mt-2 text-xs text-gray-500">동점이면 재논의 후 재투표</div>
+          </section>
+
+          <section className="rounded-xl border p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">🏆 점수 & 종료</div>
+            <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
+              <li>관객 승리 → 관객 +100</li>
+              <li>라이어 승리 → 라이어 +100 (트롤 제외)</li>
+              <li>트롤이 죽으면 → 트롤 본인 +100 (게임은 계속)</li>
+            </ul>
+
+            <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">
+              <div className="font-semibold">🎯 최종 승리 조건</div>
+              <div className="mt-1 text-gray-700">가장 먼저 300점을 달성해야한다</div>
+            </div>
+          </section>
+        </div>
+
+        <div className="border-t px-4 py-3">
+          <button
+            className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white"
+            onClick={onClose}
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
