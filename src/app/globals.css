@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 1) 브라우저/OS 다크모드 자동 적용 차단 */
+:root {
+  color-scheme: only light; /* 일부 브라우저에서 더 강하게 라이트 고정 */
+}
+html,
+body {
+  background: #fff;
+  color: #111827; /* Tailwind text-gray-900과 동일 */
+}
+
+/* 2) iOS Safari 텍스트 회색 보정 방지 */
+body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-text-fill-color: currentColor;
+}
+
+/* 3) 링크/버튼/인풋 등 기본 색이 희미해지는 경우 방지 */
+a, button, input, textarea, select {
+  color: inherit;
+}
+
+/* 4) placeholder가 너무 연하면 최소 가독성 확보(원하면 조절) */
+::placeholder {
+  color: rgba(17, 24, 39, 0.5);
+}
+
