@@ -74,6 +74,7 @@ function remainingMs(endsAt: number | null): number {
   return Math.max(0, endsAt - Date.now());
 }
 
+
 export default function LiarPage() {
   const [playerId, setPlayerId] = useState<string>("");
   const [nickname, setNickname] = useState<string>("");
@@ -85,18 +86,93 @@ export default function LiarPage() {
   const [joinErr, setJoinErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
 
-  // localStorage load
-  useEffect(() => {
-    const pid = getLS("liar_player_id") ?? uuid();
-    setLS("liar_player_id", pid);
-    setPlayerId(pid);
+  async function resetAll(): Promise<void> {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/liar/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId }), // 있어도 되고 없어도 됨
+      });
 
-    const nn = getLS("liar_nickname");
-    if (nn) {
-      setNickname(nn);
-      setJoined(true); // 닉네임이 저장되어 있으면 "이미 참가한 상태"로 간주 (원하면 false로 바꿔도 됨)
+      if (!res.ok) {
+        alert("초기화 실패. 잠시 후 다시 시도해줘.");
+        return;
+      }
+
+      // ✅ 로컬도 제거 (A안 복구 저장값 포함)
+      try {
+        localStorage.removeItem("liar_player_id");
+        localStorage.removeItem("liar_nickname");
+        localStorage.removeItem("liar_version");
+      } catch {}
+
+      location.reload();
+    } finally {
+      setBusy(false);
     }
+  }
+
+  // localStorage load + resume
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const pid = getLS("liar_player_id") ?? uuid();
+      setLS("liar_player_id", pid);
+      setPlayerId(pid);
+
+      const savedNick = getLS("liar_nickname");
+      if (!savedNick) {
+        // 닉네임 없으면 참가 안 한 상태
+        if (!cancelled) setJoined(false);
+        return;
+      }
+
+      // ✅ A안: 새로고침 시 자동 복구(resume)
+      try {
+        const res = await fetch(`/api/liar/me`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId: pid }),
+        });
+
+        if (!res.ok) {
+          // 복구 실패면 로컬 세션 제거하고 join 화면으로
+          setLS("liar_nickname", "");
+          try {
+            localStorage.removeItem("liar_nickname");
+          } catch {}
+          if (!cancelled) {
+            setNickname("");
+            setJoined(false);
+          }
+          return;
+        }
+
+        const data = (await res.json()) as MeState;
+        if (!cancelled) {
+          setNickname(savedNick);
+          setMe(data);
+          setJoined(true);
+        }
+      } catch {
+        // 네트워크 문제면 join 화면으로 보내지 말고, 일단 로컬로 joined 처리 후 폴링으로 회복하도록 둘 수도 있음.
+        // 여기서는 "오프라인이더라도 UI는 유지"를 선택
+        if (!cancelled) {
+          setNickname(savedNick);
+          setJoined(true);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
 
   const isHost = useMemo(() => {
     if (!publicState || !playerId) return false;
@@ -161,8 +237,8 @@ export default function LiarPage() {
         });
 
         if (res.ok) {
-          const d = (await res.json()) as MeState;
-          setMe(d);
+          const d = (await res.json()) as { me: MeState };
+          setMe(d.me);
         }
       } catch {
         // ignore
@@ -267,6 +343,14 @@ export default function LiarPage() {
 
   return (
     <main className="min-h-screen bg-white p-4">
+      <button 
+        className="text-xs underline text-gray-500"
+        onClick={resetAll}
+        disabled={busy}
+        >
+        전체 초기화
+      </button>
+
       <div className="mx-auto max-w-md space-y-4">
         <header className="rounded-xl border bg-white p-4">
           <div className="flex items-center justify-between">
