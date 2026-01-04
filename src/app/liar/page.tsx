@@ -813,12 +813,6 @@ export default function LiarPage() {
 
   const questionText = me?.question ?? null;
 
-  // ✅ 토론 타이머(육안 강조): DISCUSS/TIE_DISCUSS 둘 다 상단에도 띄우기
-  const discussEndsAt = publicState?.round.discussEndsAt ?? null;
-  const tieEndsAt = publicState?.round.tieDiscussEndsAt ?? null;
-  const showTopTimer = phase === "DISCUSS" || phase === "TIE_DISCUSS";
-  const topTimerEndsAt = phase === "DISCUSS" ? discussEndsAt : tieEndsAt;
-
   return (
     <main className="min-h-screen bg-gray-100 p-4">
       <div className="mx-auto max-w-md space-y-3">
@@ -861,20 +855,6 @@ export default function LiarPage() {
             내 역할 <span className="font-semibold">{meRoleKo}</span>
             {!isAliveMe && joined ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
           </div>
-
-          {/* ✅ 토론/재논의 타이머를 상단에 크게 노출 */}
-          {showTopTimer ? (
-            <div className="mt-3 rounded-xl border bg-gray-50 p-3">
-              <TimerPill
-                title={phase === "DISCUSS" ? "토론" : "재논의"}
-                endsAt={topTimerEndsAt}
-                hint={phase === "DISCUSS" ? "3분" : "1분"}
-              />
-              <div className="mt-1 text-[11px] text-gray-500">
-                시간이 끝나면 투표 패널이 자동으로 열립니다.
-              </div>
-            </div>
-          ) : null}
         </header>
 
         {/* 참가 전 */}
