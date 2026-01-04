@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma, getOrCreateGame, updateGameCAS } from "@/lib/liar/db";
 import type { GameState } from "@/lib/liar/types";
+import { QUESTIONS } from "@/lib/liar/questions";
 
 export const runtime = "nodejs";
 
 type Body = { playerId: string };
+
+type MeState = {
+  role: "AUDIENCE" | "LIAR" | "TROLL" | null;
+  min: number;
+  max: number;
+  question: string | null;
+};
 
 function addPlayerIfMissing(state: GameState, playerId: string, nickname: string): GameState {
   const exists = state.players.some(p => p.playerId === playerId);
@@ -32,6 +40,20 @@ function addPlayerIfMissing(state: GameState, playerId: string, nickname: string
   };
 }
 
+function buildMeState(state: GameState, playerId: string): MeState {
+  const role = (state.round.rolesByPlayerId[playerId] ?? null) as MeState["role"];
+  const min = state.round.min ?? 0;
+  const max = state.round.max ?? 0;
+
+  const qid = state.round.questionId;
+  const q = qid ? QUESTIONS.find(x => x.id === qid) : null;
+
+  // 규칙: 라이어는 질문 비공개
+  const question = role === "LIAR" ? null : q?.text ?? null;
+
+  return { role, min, max, question };
+}
+
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json()) as Body;
   const playerId = body.playerId?.trim();
@@ -48,24 +70,20 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "unknown_player" }, { status: 404 });
   }
 
-  // 2) 게임 state 조회
+  // 2) 게임 state 조회 + (A안) state에 없으면 재삽입
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { state, dbVersion } = await getOrCreateGame();
-
-    // 3) state에 없으면(예: 새로고침 후) 재삽입
     const next = addPlayerIfMissing(state, playerId, player.nickname);
 
     // 변경이 없으면 그대로 반환
     if (next === state) {
-      const me = next.players.find(x => x.playerId === playerId) ?? null;
-      return NextResponse.json({ ok: true, player, me, state: next });
+      return NextResponse.json(buildMeState(next, playerId));
     }
 
     // 변경이 있으면 CAS 업데이트
     const res = await updateGameCAS(dbVersion, next);
     if (res.ok) {
-      const me = next.players.find(x => x.playerId === playerId) ?? null;
-      return NextResponse.json({ ok: true, player, me, state: next });
+      return NextResponse.json(buildMeState(next, playerId));
     }
   }
 

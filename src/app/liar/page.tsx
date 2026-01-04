@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Phase =
   | "LOBBY"
@@ -50,7 +50,6 @@ type MeState = {
 };
 
 function uuid(): string {
-  // crypto.randomUUID()는 대부분 환경에서 OK
   return globalThis.crypto?.randomUUID?.() ?? `p_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
@@ -69,11 +68,18 @@ function setLS(key: string, value: string): void {
   }
 }
 
+function removeLS(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function remainingMs(endsAt: number | null): number {
   if (!endsAt) return 0;
   return Math.max(0, endsAt - Date.now());
 }
-
 
 export default function LiarPage() {
   const [playerId, setPlayerId] = useState<string>("");
@@ -86,13 +92,19 @@ export default function LiarPage() {
   const [joinErr, setJoinErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
 
+  // 최신 version을 stale closure 없이 쓰기 위해 ref 유지
+  const publicVersionRef = useRef<number>(0);
+  useEffect(() => {
+    publicVersionRef.current = publicState?.version ?? publicVersionRef.current;
+  }, [publicState?.version]);
+
   async function resetAll(): Promise<void> {
     setBusy(true);
     try {
       const res = await fetch("/api/liar/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }), // 있어도 되고 없어도 됨
+        body: JSON.stringify({ playerId }),
       });
 
       if (!res.ok) {
@@ -100,12 +112,10 @@ export default function LiarPage() {
         return;
       }
 
-      // ✅ 로컬도 제거 (A안 복구 저장값 포함)
-      try {
-        localStorage.removeItem("liar_player_id");
-        localStorage.removeItem("liar_nickname");
-        localStorage.removeItem("liar_version");
-      } catch {}
+      // 로컬도 제거
+      removeLS("liar_player_id");
+      removeLS("liar_nickname");
+      removeLS("liar_version");
 
       location.reload();
     } finally {
@@ -113,23 +123,25 @@ export default function LiarPage() {
     }
   }
 
-  // localStorage load + resume
+  // localStorage load + resume (A안)
   useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
       const pid = getLS("liar_player_id") ?? uuid();
       setLS("liar_player_id", pid);
-      setPlayerId(pid);
+      if (!cancelled) setPlayerId(pid);
 
       const savedNick = getLS("liar_nickname");
       if (!savedNick) {
-        // 닉네임 없으면 참가 안 한 상태
-        if (!cancelled) setJoined(false);
+        if (!cancelled) {
+          setNickname("");
+          setJoined(false);
+        }
         return;
       }
 
-      // ✅ A안: 새로고침 시 자동 복구(resume)
+      // ✅ resume는 /api/liar/me 호출로 서버에 존재 확인
       try {
         const res = await fetch(`/api/liar/me`, {
           method: "POST",
@@ -138,27 +150,27 @@ export default function LiarPage() {
         });
 
         if (!res.ok) {
-          // 복구 실패면 로컬 세션 제거하고 join 화면으로
-          setLS("liar_nickname", "");
-          try {
-            localStorage.removeItem("liar_nickname");
-          } catch {}
+          removeLS("liar_nickname");
+          removeLS("liar_version");
           if (!cancelled) {
             setNickname("");
             setJoined(false);
+            setMe(null);
+            setPublicState(null);
           }
           return;
         }
 
+        // ✅ /api/liar/me는 이제 MeState 그대로 반환한다
         const data = (await res.json()) as MeState;
+
         if (!cancelled) {
           setNickname(savedNick);
           setMe(data);
           setJoined(true);
         }
       } catch {
-        // 네트워크 문제면 join 화면으로 보내지 말고, 일단 로컬로 joined 처리 후 폴링으로 회복하도록 둘 수도 있음.
-        // 여기서는 "오프라인이더라도 UI는 유지"를 선택
+        // 네트워크 불안정 시: UI는 유지 (joined true)하고 폴링으로 회복
         if (!cancelled) {
           setNickname(savedNick);
           setJoined(true);
@@ -167,12 +179,10 @@ export default function LiarPage() {
     };
 
     void run();
-
     return () => {
       cancelled = true;
     };
   }, []);
-
 
   const isHost = useMemo(() => {
     if (!publicState || !playerId) return false;
@@ -190,8 +200,10 @@ export default function LiarPage() {
     const loop = async () => {
       if (stopped) return;
 
-      const currentV = publicState?.version ?? (Number(getLS("liar_version") ?? "0") || 0);
-
+      // ✅ stale closure 방지: ref + localStorage fallback
+      const fromRef = publicVersionRef.current || 0;
+      const fromLS = Number(getLS("liar_version") ?? "0") || 0;
+      const currentV = Math.max(fromRef, fromLS);
 
       try {
         const res = await fetch(`/api/liar/state?v=${currentV}`, { method: "GET" });
@@ -201,8 +213,7 @@ export default function LiarPage() {
           const s = (await res.json()) as PublicState;
           setPublicState(s);
           setLS("liar_version", String(s.version));
-        } else {
-          // ignore
+          publicVersionRef.current = s.version;
         }
       } catch {
         // ignore
@@ -211,18 +222,18 @@ export default function LiarPage() {
       timer = window.setTimeout(loop, 1000);
     };
 
-    loop();
-
+    void loop();
     return () => {
       stopped = true;
       if (timer) window.clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joined]);
 
-  // poll my role/question (separate endpoint)
+  // poll my role/question
   useEffect(() => {
-    if (!joined || !playerId) return;
+    if (!joined) return;
+    if (!playerId) return; // ✅ playerId 없으면 절대 호출 금지
+
     let timer: number | null = null;
     let stopped = false;
 
@@ -237,8 +248,12 @@ export default function LiarPage() {
         });
 
         if (res.ok) {
-          const d = (await res.json()) as { me: MeState };
-          setMe(d.me);
+          // ✅ MeState 그대로 온다 (d.me 아님)
+          const d = (await res.json()) as MeState;
+          setMe(d);
+        } else {
+          // resume 실패/세션 끊김: me만 비움 (joined는 유지해서 UI가 덜 흔들리게)
+          setMe(null);
         }
       } catch {
         // ignore
@@ -247,8 +262,7 @@ export default function LiarPage() {
       timer = window.setTimeout(loop, 1500);
     };
 
-    loop();
-
+    void loop();
     return () => {
       stopped = true;
       if (timer) window.clearTimeout(timer);
@@ -260,6 +274,10 @@ export default function LiarPage() {
     const nn = nickname.trim();
     if (!nn) {
       setJoinErr("닉네임을 입력해줘.");
+      return;
+    }
+    if (!playerId) {
+      setJoinErr("세션이 아직 준비되지 않았어. 잠깐 후 다시 눌러줘.");
       return;
     }
 
@@ -275,6 +293,11 @@ export default function LiarPage() {
         setLS("liar_nickname", nn);
         setNickname(nn);
         setJoined(true);
+
+        // ✅ join 직후 me/state를 즉시 갱신 (첫 화면 안정화)
+        removeLS("liar_version");
+        setPublicState(null);
+        setMe(null);
       } else {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         if (res.status === 409 && j?.error === "nickname_taken") {
@@ -299,8 +322,12 @@ export default function LiarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId }),
       });
-      // 실패해도 폴링으로 상태 갱신되니 조용히 처리
+      // start 직후 role/question을 빠르게 반영
       void res;
+      setTimeout(() => {
+        removeLS("liar_version");
+        publicVersionRef.current = 0;
+      }, 0);
     } finally {
       setBusy(false);
     }
@@ -315,6 +342,11 @@ export default function LiarPage() {
         body: JSON.stringify({ playerId }),
       });
       void res;
+      // PREP에서 질문 바뀌면 me/state 빨리 반영
+      setTimeout(() => {
+        removeLS("liar_version");
+        publicVersionRef.current = 0;
+      }, 0);
     } finally {
       setBusy(false);
     }
@@ -330,6 +362,12 @@ export default function LiarPage() {
         body: JSON.stringify({ playerId }),
       });
       void res;
+
+      // ✅ 재시작 직후: UI 캐시/스냅샷을 지워서 바로 PREP로 따라오게
+      removeLS("liar_version");
+      publicVersionRef.current = 0;
+      setPublicState(null);
+      setMe(null);
     } finally {
       setBusy(false);
     }
@@ -341,13 +379,12 @@ export default function LiarPage() {
   const phase = publicState?.phase ?? "LOBBY";
   const meRole = me?.role ?? null;
 
+  // 질문은 서버가 라이어면 null로 내려주므로, 여기선 그대로 표시/비표시만 함
+  const questionText = me?.question ?? null;
+
   return (
     <main className="min-h-screen bg-white p-4">
-      <button 
-        className="text-xs underline text-gray-500"
-        onClick={resetAll}
-        disabled={busy}
-        >
+      <button className="text-xs underline text-gray-500" onClick={resetAll} disabled={busy}>
         전체 초기화
       </button>
 
@@ -421,6 +458,10 @@ export default function LiarPage() {
                     재시작
                   </button>
                 </div>
+
+                <div className="mt-2 text-xs text-gray-500">
+                  재시작은 “게임 상태만 초기화”야. PREP로 돌아간 뒤 다시 시작을 누르면 답변 입력이 뜬다.
+                </div>
               </section>
             ) : null}
 
@@ -431,11 +472,10 @@ export default function LiarPage() {
                 <span className="font-semibold">{publicState?.round.max ?? 0}</span>
               </div>
 
-              {/* 질문은 라이어에게만 숨김: me.question이 null이면 안 보여줌 */}
-              {me?.question ? (
+              {questionText ? (
                 <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
                   <div className="text-xs text-gray-500">질문</div>
-                  <div className="mt-1 font-semibold text-gray-900">{me.question}</div>
+                  <div className="mt-1 font-semibold text-gray-900">{questionText}</div>
                 </div>
               ) : (
                 <div className="mt-2 text-sm text-gray-500">질문은 비공개</div>
@@ -469,7 +509,11 @@ export default function LiarPage() {
             {phase === "DISCUSS" || phase === "TIE_DISCUSS" ? (
               <TimerCard
                 title={phase === "DISCUSS" ? "토론" : "동점 재논의"}
-                endsAt={phase === "DISCUSS" ? publicState?.round.discussEndsAt ?? null : publicState?.round.tieDiscussEndsAt ?? null}
+                endsAt={
+                  phase === "DISCUSS"
+                    ? publicState?.round.discussEndsAt ?? null
+                    : publicState?.round.tieDiscussEndsAt ?? null
+                }
               />
             ) : null}
 
@@ -497,7 +541,7 @@ export default function LiarPage() {
 }
 
 function TimerCard({ title, endsAt }: { title: string; endsAt: number | null }) {
-  const [tick, setTick] = useState<number>(0);
+  const [, setTick] = useState<number>(0);
   useEffect(() => {
     const t = window.setInterval(() => setTick(v => v + 1), 250);
     return () => window.clearInterval(t);
@@ -512,13 +556,7 @@ function TimerCard({ title, endsAt }: { title: string; endsAt: number | null }) 
   );
 }
 
-function RevealCard({
-  players,
-  answers,
-}: {
-  players: PublicPlayer[];
-  answers: Record<string, number>;
-}) {
+function RevealCard({ players, answers }: { players: PublicPlayer[]; answers: Record<string, number> }) {
   return (
     <section className="rounded-xl border bg-white p-4">
       <div className="text-sm font-semibold">답변 공개</div>
@@ -553,7 +591,7 @@ function AnswerBox({
   const [err, setErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
 
-  const [tick, setTick] = useState<number>(0);
+  const [, setTick] = useState<number>(0);
   useEffect(() => {
     const t = window.setInterval(() => setTick(v => v + 1), 250);
     return () => window.clearInterval(t);
@@ -580,9 +618,7 @@ function AnswerBox({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId, value: n }),
       });
-      if (!res.ok) {
-        setErr("제출 실패(상태가 바뀌었을 수 있음).");
-      }
+      if (!res.ok) setErr("제출 실패(상태가 바뀌었을 수 있음).");
     } catch {
       setErr("네트워크 오류");
     } finally {
@@ -617,9 +653,7 @@ function AnswerBox({
         제출
       </button>
 
-      <div className="mt-2 text-xs text-gray-500">
-        제출 후 수정 불가 · 시간 초과 시 10초씩 연장
-      </div>
+      <div className="mt-2 text-xs text-gray-500">제출 후 수정 불가 · 시간 초과 시 10초씩 연장</div>
     </section>
   );
 }
