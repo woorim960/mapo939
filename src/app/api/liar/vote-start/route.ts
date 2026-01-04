@@ -23,10 +23,6 @@ export async function POST(req: Request): Promise<Response> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { state, dbVersion } = await getOrCreateGame();
 
-    if (!isAlive(state, playerId)) {
-      return NextResponse.json({ error: "not_alive" }, { status: 403 });
-    }
-
     if (!canStartVoting(state.phase)) {
       return NextResponse.json({ error: "not_allowed_phase", phase: state.phase }, { status: 400 });
     }
