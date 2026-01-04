@@ -51,13 +51,18 @@ a, button, input, textarea, select {
   color: rgba(17, 24, 39, 0.5);
 }
 
-/* iOS Safari: 버튼/인풋 텍스트가 회색으로 보이는 현상 방지 */
+/* iOS Safari: button 텍스트가 안 보이는 문제 방지 */
 button,
-input,
-textarea,
-select {
-  color: inherit;
-  -webkit-text-fill-color: currentColor; /* ✅ 이게 핵심 */
-  opacity: 1; /* 혹시 자동으로 낮아지는 경우 방지 */
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  -webkit-text-fill-color: currentColor !important;
 }
+
+/* (선택) iOS 기본 버튼 스타일 개입 최소화 */
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 
