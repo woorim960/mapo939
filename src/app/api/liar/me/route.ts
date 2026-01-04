@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, getOrCreateGame, updateGameCAS } from "@/lib/liar/db";
 import type { GameState } from "@/lib/liar/types";
-import { QUESTIONS } from "@/lib/liar/questions";
+import { QUESTIONS } from "@/lib/liar/questions"; // 너가 만든 questions.ts
 
 export const runtime = "nodejs";
 
@@ -15,48 +15,50 @@ type MeState = {
 };
 
 function addPlayerIfMissing(state: GameState, playerId: string, nickname: string): GameState {
-  const exists = state.players.some(p => p.playerId === playerId);
+  const exists = state.players?.some(p => p.playerId === playerId);
   if (exists) return state;
 
-  const isFirst = state.players.length === 0;
-  const hostPlayerId = state.hostPlayerId ?? (isFirst ? playerId : null);
+  const players = [...(state.players ?? [])];
 
-  const players = [
-    ...state.players,
-    {
-      playerId,
-      nickname,
-      isAlive: true,
-      isHost: isFirst,
-      joinedAt: Date.now(),
-    },
-  ];
+  const isFirst = players.length === 0;
+  players.push({
+    playerId,
+    nickname,
+    isAlive: true,
+    isHost: isFirst,
+    joinedAt: Date.now(),
+  });
 
   return {
     ...state,
-    hostPlayerId: hostPlayerId ?? state.hostPlayerId,
+    hostPlayerId: state.hostPlayerId ?? (isFirst ? playerId : null),
     players,
     phase: players.length >= 3 ? "PREP" : "LOBBY",
   };
 }
 
-function buildMeState(state: GameState, playerId: string): MeState {
-  const role = (state.round.rolesByPlayerId[playerId] ?? null) as MeState["role"];
-  const min = state.round.min ?? 0;
-  const max = state.round.max ?? 0;
+function findQuestionText(questionId: string | null | undefined): string | null {
+  if (!questionId) return null;
+  const q = QUESTIONS.find(x => x.id === questionId);
+  return q?.text ?? null;
+}
 
-  const qid = state.round.questionId;
-  const q = qid ? QUESTIONS.find(x => x.id === qid) : null;
+function toMeState(state: GameState, playerId: string): MeState {
+  const role = (state.round?.rolesByPlayerId?.[playerId] ?? null) as MeState["role"];
 
-  // 규칙: 라이어는 질문 비공개
-  const question = role === "LIAR" ? null : q?.text ?? null;
+  const min = state.round?.min ?? 0;
+  const max = state.round?.max ?? 0;
+
+  // 질문은 LIAR에게만 숨김(=null)
+  const text = findQuestionText(state.round?.questionId);
+  const question = role === "LIAR" ? null : text;
 
   return { role, min, max, question };
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const body = (await req.json()) as Body;
-  const playerId = body.playerId?.trim();
+  const body = (await req.json().catch(() => null)) as Body | null;
+  const playerId = body?.playerId?.trim();
 
   if (!playerId) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
@@ -64,26 +66,24 @@ export async function POST(req: Request): Promise<Response> {
 
   const p = prisma();
 
-  // 1) DB에 플레이어 존재 확인
+  // DB에 player 존재 확인(닉네임/점수)
   const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
   if (!player) {
     return NextResponse.json({ error: "unknown_player" }, { status: 404 });
   }
 
-  // 2) 게임 state 조회 + (A안) state에 없으면 재삽입
+  // state에 없으면 복구(addPlayerIfMissing) + CAS
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { state, dbVersion } = await getOrCreateGame();
     const next = addPlayerIfMissing(state, playerId, player.nickname);
 
-    // 변경이 없으면 그대로 반환
     if (next === state) {
-      return NextResponse.json(buildMeState(next, playerId));
+      return NextResponse.json(toMeState(next, playerId));
     }
 
-    // 변경이 있으면 CAS 업데이트
     const res = await updateGameCAS(dbVersion, next);
     if (res.ok) {
-      return NextResponse.json(buildMeState(next, playerId));
+      return NextResponse.json(toMeState(next, playerId));
     }
   }
 

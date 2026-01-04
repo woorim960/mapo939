@@ -57,6 +57,7 @@ export type GameState = {
   // 마지막 결과
   lastEliminatedPlayerId: string | null;
   lastEliminatedWasTroll: boolean;
+  winnerPlayerIds?: string[];
 
   // 최종 우승(300점)
   championPlayerId: string | null;
