@@ -45,6 +45,7 @@ type PublicState = {
 
   // ✅ (선택) 서버가 내려주면 GAME_OVER에서 “승리자 전원” 표시 가능
   winnerPlayerIds?: string[];
+  finalChampionPlayerIds?: string[]; // ✅ 최종 우승자
 };
 
 type MeState = {
@@ -831,6 +832,37 @@ export default function LiarPage() {
 
   const questionText = me?.question ?? null;
 
+  const roundWinners = useMemo(() => {
+    const ids = publicState?.winnerPlayerIds;
+    if (Array.isArray(ids) && ids.length > 0) return ids; // ✅ 승자 전원
+
+    // ✅ fallback: 기존 로직(1명)
+    if (publicState?.championPlayerId) return [publicState.championPlayerId];
+
+    return [];
+  }, [publicState?.winnerPlayerIds, publicState?.championPlayerId]);
+
+  const finalChampionSet = useMemo(() => {
+    // 1) 서버가 배열을 내려주는 경우
+    const ids = (publicState as any)?.finalChampionPlayerIds as string[] | undefined;
+    if (Array.isArray(ids) && ids.length > 0) return new Set(ids);
+
+    // 2) (만약 서버가 단일만 내려준다면) fallback 단일 id 지원
+    const single = (publicState as any)?.finalChampionPlayerId as string | null | undefined;
+    if (single) return new Set([single]);
+
+    return new Set<string>();
+  }, [
+    (publicState as any)?.finalChampionPlayerIds,
+    (publicState as any)?.finalChampionPlayerId,
+  ]);
+
+  const deadTrollId =
+    publicState?.lastEliminatedWasTroll
+      ? publicState?.lastEliminatedPlayerId
+      : null;
+
+
   return (
     <main className="min-h-screen bg-gray-100 p-4">
       <div className="mx-auto max-w-md space-y-3">
@@ -907,28 +939,60 @@ export default function LiarPage() {
                 {sortedPlayers.map(p => {
                   const score = p.score ?? 0;
                   const isMe = p.playerId === playerId;
+                  const isFinalChampion = finalChampionSet.has(p.playerId);
 
                   return (
                     <div
                       key={p.playerId}
-                      className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-                        isMe ? "bg-gray-50" : "bg-white"
-                      }`}
+                      className={[
+                        "flex items-center justify-between rounded-lg border px-3 py-2",
+                        // ✅ 최종 우승자 라인 강조 (여러명이면 여러명 전부)
+                        isFinalChampion
+                          ? "bg-purple-50 border-purple-300 ring-2 ring-purple-200"
+                          : isMe
+                            ? "bg-gray-50"
+                            : "bg-white",
+                      ].join(" ")}
                     >
                       <div className="text-sm">
-                        <span className="font-semibold">{p.nickname}</span>
+                        <span className={["font-semibold", isFinalChampion ? "text-purple-800" : ""].join(" ")}>
+                          {p.nickname}
+                        </span>
+
                         {isMe ? <span className="ml-2 text-xs text-gray-500">(나)</span> : null}
                         {p.isHost ? <span className="ml-2 text-xs text-blue-600">(방장)</span> : null}
                         {!p.isAlive ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {publicState?.championPlayerId === p.playerId ? (
+                        {/* ✅ 최종 우승 태그 */}
+                        {isFinalChampion ? (
+                          <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[11px] font-semibold text-purple-900">
+                            최종 우승
+                          </span>
+                        ) : null}
+
+                        {/* ✅ 라운드 승자 전원 WIN */}
+                        {roundWinners.includes(p.playerId) ? (
                           <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800">
                             WIN
                           </span>
                         ) : null}
-                        <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-semibold !text-white">
+
+                        {/* ✅ 트롤이 죽었을 때만 표시 */}
+                          {deadTrollId === p.playerId ? (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">
+                              트롤
+                            </span>
+                          ) : null}
+
+                        {/* ✅ 점수 뱃지도 최종 우승자면 강조 */}
+                        <span
+                          className={[
+                            "rounded-full px-2 py-0.5 text-[11px] font-semibold !text-white",
+                            isFinalChampion ? "bg-purple-800" : "bg-gray-900",
+                          ].join(" ")}
+                        >
                           {score}점
                         </span>
                       </div>

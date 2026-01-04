@@ -33,11 +33,10 @@ function pickEliminated(counts: Record<string, number>): { eliminatedId: string 
 
 type Role = "AUDIENCE" | "LIAR" | "TROLL";
 
-function aliveCountByRole(state: GameState, rolesByPlayerId: Record<string, Role>): {
-  aliveAudience: number;
-  aliveLiar: number;
-  aliveTroll: number;
-} {
+function aliveCountByRole(
+  state: GameState,
+  rolesByPlayerId: Record<string, Role>
+): { aliveAudience: number; aliveLiar: number; aliveTroll: number } {
   let aliveAudience = 0;
   let aliveLiar = 0;
   let aliveTroll = 0;
@@ -74,7 +73,11 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "not_result_phase" }, { status: 409 });
     }
 
-    const round = state.round ?? ({} as any);
+    const round = (state.round ?? ({} as any)) as any;
+
+    // ✅ 중복 지급 방지 플래그 (한 라운드에 트롤 죽음 보상 1회만)
+    const trollDeathRewarded: boolean = Boolean(round.trollDeathRewarded);
+
     const votesByVoterId: Record<string, string> = round.votesByVoterId ?? {};
     const counts = computeVoteCounts(votesByVoterId);
 
@@ -89,20 +92,22 @@ export async function POST(req: Request): Promise<Response> {
         round: {
           ...round,
           tieDiscussEndsAt: Date.now() + 60_000, // 1분
-          votesByVoterId: {}, // ✅ 핵심: 재투표 가능하도록 초기화
+          votesByVoterId: {}, // ✅ 재투표 가능하도록 초기화
+          // ✅ 동점 재논의 들어가면 "트롤 죽음 보상" 플래그는 유지해도 됨(아직 죽은 트롤 없음)
+          // trollDeathRewarded 유지
         },
       };
+
       const r = await updateGameCAS(dbVersion, nextTie);
       if (r.ok) return NextResponse.json({ ok: true, movedTo: "TIE_DISCUSS" });
       continue;
     }
 
     const rolesByPlayerId = (round.rolesByPlayerId ?? {}) as Record<string, Role>;
-
     const eliminatedRole = (rolesByPlayerId?.[eliminatedId] ?? null) as Role | null;
     const lastEliminatedWasTroll = eliminatedRole === "TROLL";
 
-    // ✅ eliminated는 관전자 처리(isAlive=false)
+    // ✅ eliminated는 사망 처리(isAlive=false)
     const nextPlayers = (state.players ?? []).map(pl =>
       pl.playerId === eliminatedId ? { ...pl, isAlive: false } : pl
     );
@@ -111,16 +116,13 @@ export async function POST(req: Request): Promise<Response> {
     const stateAfterElim: GameState = { ...state, players: nextPlayers };
     const { aliveAudience, aliveLiar, aliveTroll } = aliveCountByRole(stateAfterElim, rolesByPlayerId);
 
-    // ✅ 네가 말한 승리 조건
+    // ✅ 승리 조건
     // - 관객 승리: 라이어 전멸
-    // - 라이어+트롤 승리: 라이어 수 === 관객 수  (트롤 수는 비교에 포함 X)
+    // - 라이어+트롤 승리: 라이어 수 === 관객 수 (트롤 수는 비교에 포함 X)
     const audienceWin = aliveLiar === 0;
     const liarTeamWin = !audienceWin && aliveLiar === aliveAudience;
 
-    // ✅ 아직 게임이 안 끝났으면: 다음 라운드로 가야 함
-    // (너는 지금 finalize에서 바로 GAME_OVER로 끝내고 있었는데,
-    //  이 승리 조건이면 대부분 "끝나지 않는 턴"이 생김.)
-    // 여기서는 "끝나지 않으면 DISCUSS로 복귀 + 투표 초기화"로 처리(가장 단순).
+    // ✅ 게임이 안 끝났으면 DISCUSS로 복귀 + 다음 라운드 준비
     if (!audienceWin && !liarTeamWin) {
       const nextContinue: GameState = {
         ...state,
@@ -133,8 +135,11 @@ export async function POST(req: Request): Promise<Response> {
           ...round,
           index: (round.index ?? 0) + 1,
           votesByVoterId: {}, // ✅ 다음 투표 대비 초기화
-          discussEndsAt: Date.now() + 180_000, // ✅ 다시 3분 토론(원하면 값 조절)
+          discussEndsAt: Date.now() + 180_000, // 3분 토론
           tieDiscussEndsAt: null,
+
+          // ✅ 새 라운드로 넘어가면 트롤 죽음 보상 플래그도 초기화
+          trollDeathRewarded: false,
         },
       };
 
@@ -165,12 +170,36 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
-    // ✅ DB 점수 +100 (승리자 전원)
+    // ✅ DB 점수 반영
+    // - 승리자 전원 +100
+    // - (추가) 트롤이 죽으면 그 트롤 본인 +100 (한 라운드 1회만, 중복 방지)
+    //
+    // ⚠️ Prisma 트랜잭션으로 묶어서 원자적으로 처리하는 게 안전
+    const tx: any[] = [];
+
     if (winners.length > 0) {
-      await p.liarPlayer.updateMany({
-        where: { id: { in: winners } },
-        data: { score: { increment: 100 } },
-      });
+      tx.push(
+        p.liarPlayer.updateMany({
+          where: { id: { in: winners } },
+          data: { score: { increment: 100 } },
+        })
+      );
+    }
+
+    // ✅ 트롤 죽음 보상
+    // - eliminatedRole이 TROLL일 때만
+    // - trollDeathRewarded가 false일 때만
+    if (lastEliminatedWasTroll && !trollDeathRewarded) {
+      tx.push(
+        p.liarPlayer.update({
+          where: { id: eliminatedId },
+          data: { score: { increment: 100 } },
+        })
+      );
+    }
+
+    if (tx.length > 0) {
+      await p.$transaction(tx);
     }
 
     const championPlayerId = winners[0] ?? null;
@@ -183,9 +212,16 @@ export async function POST(req: Request): Promise<Response> {
       lastEliminatedWasTroll,
       championPlayerId,
 
-      // ✅ UI에서 "승리자 목록" 보여주려면 이 필드가 필요
-      // GameState 타입에 winnerPlayerIds?: string[] 추가해줘.
+      // ✅ UI에서 "승리자 목록" 보여주려면 이 필드 필요
+      // GameState 타입에 winnerPlayerIds?: string[] 추가돼 있어야 함.
       winnerPlayerIds: winners,
+
+      // ✅ 트롤 죽음 보상 중복 방지 플래그 세팅
+      // (게임이 끝났으니 유지돼도 무방)
+      round: {
+        ...round,
+        trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
+      },
 
       phase: "GAME_OVER",
     };
@@ -200,6 +236,7 @@ export async function POST(req: Request): Promise<Response> {
         aliveAudience,
         aliveLiar,
         aliveTroll,
+        trollDeathBonusApplied: Boolean(lastEliminatedWasTroll && !trollDeathRewarded),
       });
     }
   }

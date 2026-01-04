@@ -4,6 +4,8 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
+const FINAL_SCORE = 300;
+
 type Phase =
   | "LOBBY"
   | "PREP"
@@ -20,7 +22,7 @@ type PublicPlayer = {
   nickname: string;
   isAlive: boolean;
   isHost: boolean;
-  score: number; // ✅ 추가
+  score: number;
 };
 
 type PublicState = {
@@ -44,13 +46,17 @@ type PublicState = {
   lastEliminatedWasTroll: boolean;
   championPlayerId: string | null;
 
-  // ✅ 승리자 전체 표시용 (GameState에 winnerPlayerIds 저장한다고 가정)
+  // ✅ 승리자 전체 표시용
   winnerPlayerIds: string[];
+
+  // ✅ 최종 우승자(여러명 가능)
+  finalChampionPlayerIds: string[];
 };
 
 function computeVoteCounts(votesByVoterId: Record<string, string> | undefined): Record<string, number> {
   const counts: Record<string, number> = {};
   if (!votesByVoterId) return counts;
+
   for (const voterId of Object.keys(votesByVoterId)) {
     const targetId = votesByVoterId[voterId];
     if (!targetId) continue;
@@ -59,11 +65,21 @@ function computeVoteCounts(votesByVoterId: Record<string, string> | undefined): 
   return counts;
 }
 
+function computeFinalChampions(state: GameState, scoreById: Record<string, number>): string[] {
+  // ✅ “최종 우승”은 점수 기준(>=300)으로 산정
+  // - 여러명 동시 달성 가능 → 전원 반환
+  // - GAME_OVER에서만 보이게 하고 싶으면 if (state.phase !== "GAME_OVER") return [];
+  const ids = (state.players ?? []).map(p => p.playerId);
+  return ids.filter(id => (scoreById[id] ?? 0) >= FINAL_SCORE);
+}
+
 function toPublicState(state: GameState, scoreById: Record<string, number>): PublicState {
-  const voteCounts = computeVoteCounts(state.round?.votesByVoterId);
-  const questionChangeCount = state.round?.questionChangeByPlayerId
-    ? Object.keys(state.round.questionChangeByPlayerId).length
+  const voteCounts = computeVoteCounts((state.round as any)?.votesByVoterId);
+  const questionChangeCount = (state.round as any)?.questionChangeByPlayerId
+    ? Object.keys((state.round as any).questionChangeByPlayerId).length
     : 0;
+
+  const finalChampionPlayerIds = computeFinalChampions(state, scoreById);
 
   return {
     version: state.version ?? 0,
@@ -72,26 +88,27 @@ function toPublicState(state: GameState, scoreById: Record<string, number>): Pub
     players: (state.players ?? []).map(p => ({
       playerId: p.playerId,
       nickname: p.nickname,
-      isAlive: Boolean(p.isAlive),
-      isHost: Boolean(p.isHost),
+      isAlive: Boolean((p as any).isAlive),
+      isHost: Boolean((p as any).isHost),
       score: scoreById[p.playerId] ?? 0,
     })),
     round: {
-      index: state.round?.index ?? 0,
-      questionId: state.round?.questionId ?? null,
-      min: state.round?.min ?? 0,
-      max: state.round?.max ?? 0,
-      answersByPlayerId: state.round?.answersByPlayerId ?? {},
+      index: (state.round as any)?.index ?? 0,
+      questionId: (state.round as any)?.questionId ?? null,
+      min: (state.round as any)?.min ?? 0,
+      max: (state.round as any)?.max ?? 0,
+      answersByPlayerId: (state.round as any)?.answersByPlayerId ?? {},
       voteCounts,
       questionChangeCount,
-      answeringEndsAt: state.round?.answeringEndsAt ?? null,
-      discussEndsAt: state.round?.discussEndsAt ?? null,
-      tieDiscussEndsAt: state.round?.tieDiscussEndsAt ?? null,
+      answeringEndsAt: (state.round as any)?.answeringEndsAt ?? null,
+      discussEndsAt: (state.round as any)?.discussEndsAt ?? null,
+      tieDiscussEndsAt: (state.round as any)?.tieDiscussEndsAt ?? null,
     },
-    lastEliminatedPlayerId: state.lastEliminatedPlayerId ?? null,
-    lastEliminatedWasTroll: Boolean(state.lastEliminatedWasTroll),
-    championPlayerId: state.championPlayerId ?? null,
-    winnerPlayerIds: state.winnerPlayerIds ?? [],
+    lastEliminatedPlayerId: (state as any).lastEliminatedPlayerId ?? null,
+    lastEliminatedWasTroll: Boolean((state as any).lastEliminatedWasTroll),
+    championPlayerId: (state as any).championPlayerId ?? null,
+    winnerPlayerIds: (state as any).winnerPlayerIds ?? [],
+    finalChampionPlayerIds,
   };
 }
 
@@ -99,18 +116,15 @@ function toPublicState(state: GameState, scoreById: Record<string, number>): Pub
 function shouldAutoAdvanceToVoting(state: GameState, now: number): boolean {
   const phase = state.phase;
 
-  // 이미 VOTING 이상이면 자동 전환 필요 없음
   if (phase === "VOTING" || phase === "RESULT" || phase === "GAME_OVER") return false;
 
   const round = state.round as any;
 
-  // DISCUSS 끝나면 자동으로 VOTING
   if (phase === "DISCUSS") {
     const endsAt: number | null = round?.discussEndsAt ?? null;
     return Boolean(endsAt && now >= endsAt);
   }
 
-  // TIE_DISCUSS 끝나면 자동으로 VOTING
   if (phase === "TIE_DISCUSS") {
     const endsAt: number | null = round?.tieDiscussEndsAt ?? null;
     return Boolean(endsAt && now >= endsAt);
@@ -123,7 +137,6 @@ function shouldAutoAdvanceToVoting(state: GameState, now: number): boolean {
 function advanceToVoting(state: GameState): GameState {
   const round = (state.round ?? ({} as any)) as any;
 
-  // 이미 VOTING이면 그대로 반환
   if (state.phase === "VOTING") return state;
 
   return {
@@ -132,11 +145,7 @@ function advanceToVoting(state: GameState): GameState {
     version: (state.version ?? 0) + 1,
     round: {
       ...round,
-
-      // ✅ 투표 시작 시 투표기록 초기화 (재논의/재투표 케이스 포함)
       votesByVoterId: {},
-
-      // (선택) 토론 타이머 값은 남겨도 되고 null로 지워도 됨. 혼동 방지로 null 권장
       discussEndsAt: null,
       tieDiscussEndsAt: null,
     },
@@ -146,6 +155,7 @@ function advanceToVoting(state: GameState): GameState {
 async function buildScoreMap(playerIds: string[]): Promise<Record<string, number>> {
   if (playerIds.length === 0) return {};
   const p = prisma();
+
   const rows = await p.liarPlayer.findMany({
     where: { id: { in: playerIds } },
     select: { id: true, score: true },
@@ -154,39 +164,6 @@ async function buildScoreMap(playerIds: string[]): Promise<Record<string, number
   const map: Record<string, number> = {};
   for (const r of rows) map[r.id] = r.score ?? 0;
   return map;
-}
-
-function autoAdvance(state: GameState): GameState {
-  const now = Date.now();
-  const round = state.round ?? ({} as any);
-
-  // DISCUSS 끝 -> VOTING
-  if (state.phase === "DISCUSS" && round.discussEndsAt && now >= round.discussEndsAt) {
-    return {
-      ...state,
-      phase: "VOTING",
-      version: (state.version ?? 0) + 1,
-      round: {
-        ...round,
-        votesByVoterId: round.votesByVoterId ?? {}, // 이미 있으면 유지
-      },
-    };
-  }
-
-  // TIE_DISCUSS 끝 -> VOTING
-  if (state.phase === "TIE_DISCUSS" && round.tieDiscussEndsAt && now >= round.tieDiscussEndsAt) {
-    return {
-      ...state,
-      phase: "VOTING",
-      version: (state.version ?? 0) + 1,
-      round: {
-        ...round,
-        votesByVoterId: round.votesByVoterId ?? {}, // 동점 재투표라면 보통 {}
-      },
-    };
-  }
-
-  return state;
 }
 
 export async function GET(req: Request): Promise<Response> {
