@@ -250,6 +250,38 @@ export default function LiarPage() {
     setRoleAudienceInput(String(base.audience));
   }, [phase, joinedCount, roleTouched]);
 
+  useEffect(() => {
+    if (!publicState) return;
+
+    // ✅ VOTING으로 "이동 중" 표시를 잠깐 유지하고,
+    // ✅ DISCUSS/REVEAL/RESULT로 돌아오면 다시 누를 수 있게 풀어준다.
+    if (
+      publicState.phase === "DISCUSS" ||
+      publicState.phase === "REVEAL" ||
+      publicState.phase === "RESULT" ||
+      publicState.phase === "PREP"
+    ) {
+      setGoVoteClicked(false);
+    }
+
+    // 기존 로직 유지
+    if (publicState.phase === "PREP") {
+      setMyVotedTargetId("");
+      setSelectedVoteTargetId("");
+      setVoteMode(false);
+      return;
+    }
+
+    if (publicState.phase === "TIE_DISCUSS") {
+      setMyVotedTargetId("");
+      setSelectedVoteTargetId("");
+      setVoteMode(false);
+      setGoVoteClicked(false);
+      return;
+    }
+  }, [publicState?.phase]);
+
+
   const isHost = useMemo(() => {
     if (!publicState || !playerId) return false;
     return Boolean(publicState.players.find(p => p.playerId === playerId)?.isHost);
@@ -516,7 +548,6 @@ export default function LiarPage() {
   // 실제 투표 단계 전환은: (1) state.ts auto advance (DISCUSS 종료 시 VOTING) + (2) 방장 vote-start
   useEffect(() => {
     if (!joined) return;
-    if (!isAliveMe) return;
     if (!publicState) return;
 
     const isDiscussLike = publicState.phase === "DISCUSS" || publicState.phase === "TIE_DISCUSS";
