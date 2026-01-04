@@ -889,7 +889,7 @@ export default function LiarPage() {
             />
             {joinErr ? <div className="mt-2 text-sm text-red-600">{joinErr}</div> : null}
             <button
-              className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
               onClick={join}
               disabled={busy}
             >
@@ -930,7 +930,7 @@ export default function LiarPage() {
                             WIN
                           </span>
                         ) : null}
-                        <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-semibold !text-white">
                           {score}점
                         </span>
                       </div>
@@ -1033,7 +1033,7 @@ export default function LiarPage() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
                     onClick={startGame}
                     disabled={busy || joinedCount < 3 || phase !== "PREP"}
                   >
@@ -1110,7 +1110,7 @@ export default function LiarPage() {
             {canShowGoVoteButton ? (
               <section className="rounded-xl border bg-white p-4">
                 <button
-                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
                   onClick={goToVoting}
                   disabled={busy || goVoteClicked}
                   title="투표 단계로 전환"
@@ -1177,7 +1177,7 @@ export default function LiarPage() {
 
                 <div className="mt-3 grid gap-2">
                   <button
-                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
                     onClick={submitVote}
                     disabled={busy || !canVoteNow || !selectedVoteTargetId || !!myVotedTargetId}
                   >
@@ -1212,7 +1212,7 @@ export default function LiarPage() {
                 </div>
 
                 <button
-                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
                   onClick={finalizeResult}
                   disabled={busy || !isAliveMe}
                 >
@@ -1408,7 +1408,7 @@ function AnswerBox({
       {err ? <div className="mt-2 text-sm text-red-600">{err}</div> : null}
 
       <button
-        className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
         onClick={submit}
         disabled={busy || alreadySubmitted}
       >
