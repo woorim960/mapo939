@@ -75,7 +75,7 @@ export async function POST(req: Request): Promise<Response> {
 
     const round = (state.round ?? ({} as any)) as any;
 
-    // ✅ 중복 지급 방지 플래그 (한 라운드에 트롤 죽음 보상 1회만)
+    // ✅ 중복 지급 방지 플래그(이 "RESULT 처리"에서만 의미있게 씀)
     const trollDeathRewarded: boolean = Boolean(round.trollDeathRewarded);
 
     const votesByVoterId: Record<string, string> = round.votesByVoterId ?? {};
@@ -84,17 +84,15 @@ export async function POST(req: Request): Promise<Response> {
     const { eliminatedId, isTie } = pickEliminated(counts);
 
     if (isTie || !eliminatedId) {
-      // ✅ 동점이면: 재논의 + 투표 초기화
       const nextTie: GameState = {
         ...state,
         phase: "TIE_DISCUSS",
         version: (state.version ?? 0) + 1,
         round: {
           ...round,
-          tieDiscussEndsAt: Date.now() + 60_000, // 1분
-          votesByVoterId: {}, // ✅ 재투표 가능하도록 초기화
-          // ✅ 동점 재논의 들어가면 "트롤 죽음 보상" 플래그는 유지해도 됨(아직 죽은 트롤 없음)
-          // trollDeathRewarded 유지
+          tieDiscussEndsAt: Date.now() + 60_000,
+          votesByVoterId: {},
+          // trollDeathRewarded는 유지(어차피 아직 죽은 사람 없음)
         },
       };
 
@@ -107,20 +105,19 @@ export async function POST(req: Request): Promise<Response> {
     const eliminatedRole = (rolesByPlayerId?.[eliminatedId] ?? null) as Role | null;
     const lastEliminatedWasTroll = eliminatedRole === "TROLL";
 
-    // ✅ eliminated는 사망 처리(isAlive=false)
+    // ✅ eliminated는 사망 처리
     const nextPlayers = (state.players ?? []).map(pl =>
       pl.playerId === eliminatedId ? { ...pl, isAlive: false } : pl
     );
 
-    // ✅ 다음 상태(탈락 반영 후) 기준으로 승리 조건 판단
     const stateAfterElim: GameState = { ...state, players: nextPlayers };
     const { aliveAudience, aliveLiar, aliveTroll } = aliveCountByRole(stateAfterElim, rolesByPlayerId);
 
-    // ✅ 승리 조건
-    // - 관객 승리: 라이어 전멸
-    // - 라이어+트롤 승리: 라이어 수 === 관객 수 (트롤 수는 비교에 포함 X)
     const audienceWin = aliveLiar === 0;
     const liarTeamWin = !audienceWin && aliveLiar === aliveAudience;
+
+    // ✅ 트롤 죽음 보상 지급 여부 (이번 RESULT 처리에서 딱 1회)
+    const shouldPayTrollDeathBonus = Boolean(lastEliminatedWasTroll && !trollDeathRewarded);
 
     // ✅ 게임이 안 끝났으면 DISCUSS로 복귀 + 다음 라운드 준비
     if (!audienceWin && !liarTeamWin) {
@@ -134,30 +131,38 @@ export async function POST(req: Request): Promise<Response> {
         round: {
           ...round,
           index: (round.index ?? 0) + 1,
-          votesByVoterId: {}, // ✅ 다음 투표 대비 초기화
-          discussEndsAt: Date.now() + 180_000, // 3분 토론
+          votesByVoterId: {},
+          discussEndsAt: Date.now() + 180_000,
           tieDiscussEndsAt: null,
 
-          // ✅ 새 라운드로 넘어가면 트롤 죽음 보상 플래그도 초기화
-          trollDeathRewarded: false,
+          // ✅ 이 라운드 RESULT 처리는 끝났다는 표식(중복 finalize 방지용)
+          trollDeathRewarded: true,
         },
       };
 
       const r = await updateGameCAS(dbVersion, nextContinue);
-      if (r.ok) {
-        return NextResponse.json({
-          ok: true,
-          eliminatedId,
-          movedTo: "DISCUSS",
-          aliveAudience,
-          aliveLiar,
-          aliveTroll,
+      if (!r.ok) continue;
+
+      // ✅ CAS 성공 후에 DB 점수 반영 (중복 지급 방지)
+      if (shouldPayTrollDeathBonus) {
+        await p.liarPlayer.update({
+          where: { id: eliminatedId },
+          data: { score: { increment: 100 } },
         });
       }
-      continue;
+
+      return NextResponse.json({
+        ok: true,
+        eliminatedId,
+        movedTo: "DISCUSS",
+        aliveAudience,
+        aliveLiar,
+        aliveTroll,
+        trollDeathBonusApplied: shouldPayTrollDeathBonus,
+      });
     }
 
-    // ✅ 승리자 산정: 관객 승리면 AUDIENCE, 라이어팀 승리면 LIAR+TROLL
+    // ✅ 승리자 산정
     const winners: string[] = [];
     for (const pl of stateAfterElim.players ?? []) {
       const role = rolesByPlayerId?.[pl.playerId] ?? null;
@@ -170,11 +175,30 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
-    // ✅ DB 점수 반영
-    // - 승리자 전원 +100
-    // - (추가) 트롤이 죽으면 그 트롤 본인 +100 (한 라운드 1회만, 중복 방지)
-    //
-    // ⚠️ Prisma 트랜잭션으로 묶어서 원자적으로 처리하는 게 안전
+    const championPlayerId = winners[0] ?? null;
+
+    const nextGameOver: GameState = {
+      ...state,
+      version: (state.version ?? 0) + 1,
+      players: nextPlayers,
+      lastEliminatedPlayerId: eliminatedId,
+      lastEliminatedWasTroll,
+      championPlayerId,
+      winnerPlayerIds: winners,
+      phase: "GAME_OVER",
+      round: {
+        ...round,
+        // ✅ 이 RESULT 처리는 끝났다는 표식(중복 finalize 방지용)
+        trollDeathRewarded: true,
+      },
+    };
+
+    const res = await updateGameCAS(dbVersion, nextGameOver);
+    if (!res.ok) continue;
+
+    // ✅ CAS 성공 후에 DB 점수 반영 (중복 지급 방지)
+    // - 승리자 +100
+    // - 트롤 사망자(본인) +100
     const tx: any[] = [];
 
     if (winners.length > 0) {
@@ -186,10 +210,7 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    // ✅ 트롤 죽음 보상
-    // - eliminatedRole이 TROLL일 때만
-    // - trollDeathRewarded가 false일 때만
-    if (lastEliminatedWasTroll && !trollDeathRewarded) {
+    if (shouldPayTrollDeathBonus) {
       tx.push(
         p.liarPlayer.update({
           where: { id: eliminatedId },
@@ -202,43 +223,16 @@ export async function POST(req: Request): Promise<Response> {
       await p.$transaction(tx);
     }
 
-    const championPlayerId = winners[0] ?? null;
-
-    const nextGameOver: GameState = {
-      ...state,
-      version: (state.version ?? 0) + 1,
-      players: nextPlayers,
-      lastEliminatedPlayerId: eliminatedId,
-      lastEliminatedWasTroll,
-      championPlayerId,
-
-      // ✅ UI에서 "승리자 목록" 보여주려면 이 필드 필요
-      // GameState 타입에 winnerPlayerIds?: string[] 추가돼 있어야 함.
-      winnerPlayerIds: winners,
-
-      // ✅ 트롤 죽음 보상 중복 방지 플래그 세팅
-      // (게임이 끝났으니 유지돼도 무방)
-      round: {
-        ...round,
-        trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
-      },
-
-      phase: "GAME_OVER",
-    };
-
-    const res = await updateGameCAS(dbVersion, nextGameOver);
-    if (res.ok) {
-      return NextResponse.json({
-        ok: true,
-        eliminatedId,
-        winners,
-        winType: audienceWin ? "AUDIENCE" : "LIAR_TEAM",
-        aliveAudience,
-        aliveLiar,
-        aliveTroll,
-        trollDeathBonusApplied: Boolean(lastEliminatedWasTroll && !trollDeathRewarded),
-      });
-    }
+    return NextResponse.json({
+      ok: true,
+      eliminatedId,
+      winners,
+      winType: audienceWin ? "AUDIENCE" : "LIAR_TEAM",
+      aliveAudience,
+      aliveLiar,
+      aliveTroll,
+      trollDeathBonusApplied: shouldPayTrollDeathBonus,
+    });
   }
 
   return NextResponse.json({ error: "concurrent_update" }, { status: 409 });
