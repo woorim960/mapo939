@@ -69,3 +69,18 @@ model AdminSession {
   @@index([expiresAt])
   @@map("admin_sessions")
 }
+
+model LiarGame {
+  id        Int      @id @default(1) // 단일 row 고정
+  version   Int      @default(0)
+  stateJson Json
+  updatedAt DateTime @updatedAt
+}
+
+model LiarPlayer {
+  id        String   @id // uuid
+  nickname  String   @unique
+  score     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
