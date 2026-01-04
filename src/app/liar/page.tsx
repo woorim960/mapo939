@@ -81,6 +81,45 @@ function remainingMs(endsAt: number | null): number {
   return Math.max(0, endsAt - Date.now());
 }
 
+/** UI 텍스트 변환 */
+function phaseLabel(phase: Phase): string {
+  switch (phase) {
+    case "LOBBY":
+      return "대기";
+    case "PREP":
+      return "준비";
+    case "ANSWERING":
+      return "답변 입력";
+    case "REVEAL":
+      return "답변 공개";
+    case "DISCUSS":
+      return "토론";
+    case "VOTING":
+      return "투표";
+    case "TIE_DISCUSS":
+      return "동점 재논의";
+    case "RESULT":
+      return "결과";
+    case "GAME_OVER":
+      return "게임 종료";
+    default:
+      return phase;
+  }
+}
+
+function roleLabel(role: MeState["role"]): string {
+  switch (role) {
+    case "AUDIENCE":
+      return "관객";
+    case "LIAR":
+      return "라이어";
+    case "TROLL":
+      return "트롤";
+    default:
+      return "?";
+  }
+}
+
 export default function LiarPage() {
   const [playerId, setPlayerId] = useState<string>("");
   const [nickname, setNickname] = useState<string>("");
@@ -92,11 +131,21 @@ export default function LiarPage() {
   const [joinErr, setJoinErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
 
+  // ✅ 투표 UI 상태
+  const [voteMode, setVoteMode] = useState<boolean>(false); // "투표하기" 눌렀는지
+  const [selectedVoteTargetId, setSelectedVoteTargetId] = useState<string>("");
+
   // 최신 version을 stale closure 없이 쓰기 위해 ref 유지
   const publicVersionRef = useRef<number>(0);
   useEffect(() => {
     publicVersionRef.current = publicState?.version ?? publicVersionRef.current;
   }, [publicState?.version]);
+
+  // phase가 바뀌면 투표 UI 초기화(특히 투표 이후 결과/재논의로 넘어갈 때)
+  useEffect(() => {
+    setVoteMode(false);
+    setSelectedVoteTargetId("");
+  }, [publicState?.phase]);
 
   async function resetAll(): Promise<void> {
     setBusy(true);
@@ -108,7 +157,7 @@ export default function LiarPage() {
       });
 
       if (!res.ok) {
-        alert("초기화 실패. 잠시 후 다시 시도해줘.");
+        alert("전체 초기화에 실패했어. 잠시 후 다시 시도해줘.");
         return;
       }
 
@@ -141,7 +190,7 @@ export default function LiarPage() {
         return;
       }
 
-      // ✅ resume는 /api/liar/me 호출로 서버에 존재 확인
+      // resume는 /api/liar/me 호출로 서버에 존재 확인
       try {
         const res = await fetch(`/api/liar/me`, {
           method: "POST",
@@ -161,7 +210,6 @@ export default function LiarPage() {
           return;
         }
 
-        // ✅ /api/liar/me는 이제 MeState 그대로 반환한다
         const data = (await res.json()) as MeState;
 
         if (!cancelled) {
@@ -170,7 +218,7 @@ export default function LiarPage() {
           setJoined(true);
         }
       } catch {
-        // 네트워크 불안정 시: UI는 유지 (joined true)하고 폴링으로 회복
+        // 네트워크 불안정 시: UI는 유지하고 폴링으로 회복
         if (!cancelled) {
           setNickname(savedNick);
           setJoined(true);
@@ -190,6 +238,12 @@ export default function LiarPage() {
     return Boolean(meP?.isHost);
   }, [publicState, playerId]);
 
+  const isAliveMe = useMemo(() => {
+    if (!publicState || !playerId) return false;
+    const meP = publicState.players.find(p => p.playerId === playerId);
+    return Boolean(meP?.isAlive);
+  }, [publicState, playerId]);
+
   // polling public state
   useEffect(() => {
     if (!joined) return;
@@ -200,7 +254,6 @@ export default function LiarPage() {
     const loop = async () => {
       if (stopped) return;
 
-      // ✅ stale closure 방지: ref + localStorage fallback
       const fromRef = publicVersionRef.current || 0;
       const fromLS = Number(getLS("liar_version") ?? "0") || 0;
       const currentV = Math.max(fromRef, fromLS);
@@ -232,7 +285,7 @@ export default function LiarPage() {
   // poll my role/question
   useEffect(() => {
     if (!joined) return;
-    if (!playerId) return; // ✅ playerId 없으면 절대 호출 금지
+    if (!playerId) return;
 
     let timer: number | null = null;
     let stopped = false;
@@ -248,11 +301,9 @@ export default function LiarPage() {
         });
 
         if (res.ok) {
-          // ✅ MeState 그대로 온다 (d.me 아님)
           const d = (await res.json()) as MeState;
           setMe(d);
         } else {
-          // resume 실패/세션 끊김: me만 비움 (joined는 유지해서 UI가 덜 흔들리게)
           setMe(null);
         }
       } catch {
@@ -294,7 +345,6 @@ export default function LiarPage() {
         setNickname(nn);
         setJoined(true);
 
-        // ✅ join 직후 me/state를 즉시 갱신 (첫 화면 안정화)
         removeLS("liar_version");
         setPublicState(null);
         setMe(null);
@@ -322,7 +372,6 @@ export default function LiarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId }),
       });
-      // start 직후 role/question을 빠르게 반영
       void res;
       setTimeout(() => {
         removeLS("liar_version");
@@ -342,7 +391,6 @@ export default function LiarPage() {
         body: JSON.stringify({ playerId }),
       });
       void res;
-      // PREP에서 질문 바뀌면 me/state 빨리 반영
       setTimeout(() => {
         removeLS("liar_version");
         publicVersionRef.current = 0;
@@ -352,7 +400,8 @@ export default function LiarPage() {
     }
   }
 
-  async function restartGame(): Promise<void> {
+  // ✅ "게임 초기화(이번 판)" = 기존 restartGame
+  async function resetRound(): Promise<void> {
     if (!isHost) return;
     setBusy(true);
     try {
@@ -363,11 +412,49 @@ export default function LiarPage() {
       });
       void res;
 
-      // ✅ 재시작 직후: UI 캐시/스냅샷을 지워서 바로 PREP로 따라오게
       removeLS("liar_version");
       publicVersionRef.current = 0;
       setPublicState(null);
       setMe(null);
+      setVoteMode(false);
+      setSelectedVoteTargetId("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ✅ 투표 시작 버튼: phase만 VOTING으로 바꾸는 API가 있으면 호출(없으면 UI만 켬)
+  // - 이미 서버가 DISCUSS 끝나면 자동으로 VOTING으로 바꾼다면, 이건 UI 토글만 하면 됨.
+  async function openVotingUi(): Promise<void> {
+    // 서버 설계에 따라 선택:
+    // 1) 서버에 /api/liar/open-vote 같은게 있으면 여기서 호출
+    // 2) 없으면, UI만 열어도 됨(phase가 VOTING일 때만 실제 투표 가능)
+    setVoteMode(true);
+  }
+
+  async function submitVote(): Promise<void> {
+    if (!playerId) return;
+    if (!selectedVoteTargetId) return;
+
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/liar/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId, targetPlayerId: selectedVoteTargetId }),
+      });
+
+      if (!res.ok) {
+        alert("투표에 실패했어. (상태가 바뀌었을 수 있어)");
+        return;
+      }
+
+      // 투표 후 UI 잠깐 닫기 (상태는 폴링으로 반영)
+      setVoteMode(false);
+      setSelectedVoteTargetId("");
+
+      removeLS("liar_version");
+      publicVersionRef.current = 0;
     } finally {
       setBusy(false);
     }
@@ -377,37 +464,58 @@ export default function LiarPage() {
   const joinedCount = publicState?.players.length ?? 0;
 
   const phase = publicState?.phase ?? "LOBBY";
-  const meRole = me?.role ?? null;
+  const phaseKo = phaseLabel(phase);
 
-  // 질문은 서버가 라이어면 null로 내려주므로, 여기선 그대로 표시/비표시만 함
+  const meRole = me?.role ?? null;
+  const meRoleKo = roleLabel(meRole);
+
   const questionText = me?.question ?? null;
+
+  const alivePlayers = useMemo(() => {
+    return (publicState?.players ?? []).filter(p => p.isAlive);
+  }, [publicState?.players]);
+
+  const canVoteNow = useMemo(() => {
+    // 투표는 살아있는 사람만 가능 + phase는 VOTING일 때만
+    return joined && isAliveMe && phase === "VOTING";
+  }, [joined, isAliveMe, phase]);
+
+  // 투표 대상(살아있는 사람 중 자기 자신 제외)
+  const voteTargets = useMemo(() => {
+    return alivePlayers.filter(p => p.playerId !== playerId);
+  }, [alivePlayers, playerId]);
+
+  // 내가 이미 투표했는지(서버가 voteCounts만 주면 알 수 없고, votesByVoterId가 없으면 UI로만 처리)
+  // 여기서는 단순히 투표 후 UI 닫는 방식으로 충분.
+  const showVotePanel = (phase === "VOTING" || voteMode) && joined;
 
   return (
     <main className="min-h-screen bg-white p-4">
       <button className="text-xs underline text-gray-500" onClick={resetAll} disabled={busy}>
-        전체 초기화
+        전체 초기화(점수/닉네임/게임상태 전부 삭제)
       </button>
 
       <div className="mx-auto max-w-md space-y-4">
         <header className="rounded-xl border bg-white p-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-lg font-bold">라이어</h1>
-            <div className="text-xs text-gray-500">v{publicState?.version ?? 0}</div>
+            <h1 className="text-lg font-bold">라이어 게임</h1>
+            <div className="text-xs text-gray-500">버전 {publicState?.version ?? 0}</div>
           </div>
+
           <div className="mt-2 text-sm text-gray-700">
-            상태: <span className="font-semibold">{phase}</span>
+            진행 상태: <span className="font-semibold">{phaseKo}</span>
           </div>
           <div className="mt-1 text-sm text-gray-700">
-            인원: <span className="font-semibold">{joinedCount}</span> (생존 {aliveCount})
+            참여 인원: <span className="font-semibold">{joinedCount}</span>명 (생존 {aliveCount}명)
           </div>
           <div className="mt-1 text-sm text-gray-700">
-            내 역할: <span className="font-semibold">{meRole ?? "?"}</span>
+            내 역할: <span className="font-semibold">{meRoleKo}</span>
           </div>
         </header>
 
         {!joined ? (
           <section className="rounded-xl border bg-white p-4">
-            <div className="text-sm font-semibold">닉네임</div>
+            <div className="text-sm font-semibold">닉네임 입력</div>
             <input
               className="mt-2 w-full rounded-lg border px-3 py-2 text-sm outline-none"
               value={nickname}
@@ -426,19 +534,22 @@ export default function LiarPage() {
         ) : (
           <>
             <section className="rounded-xl border bg-white p-4">
-              <div className="text-sm font-semibold">플레이어</div>
+              <div className="text-sm font-semibold">참여자 목록</div>
               <div className="mt-2 space-y-2">
                 {(publicState?.players ?? []).map(p => (
                   <div key={p.playerId} className="flex items-center justify-between rounded-lg border px-3 py-2">
                     <div className="text-sm">
-                      {p.nickname} {p.isHost ? <span className="ml-1 text-xs text-blue-600">(방장)</span> : null}
+                      {p.nickname}
+                      {p.isHost ? <span className="ml-1 text-xs text-blue-600">(방장)</span> : null}
                       {!p.isAlive ? <span className="ml-2 text-xs text-gray-500">(관전자)</span> : null}
+                      {p.playerId === playerId ? <span className="ml-2 text-xs text-gray-500">(나)</span> : null}
                     </div>
                   </div>
                 ))}
               </div>
             </section>
 
+            {/* 방장 메뉴 */}
             {isHost ? (
               <section className="rounded-xl border bg-white p-4">
                 <div className="text-sm font-semibold">방장 메뉴</div>
@@ -448,27 +559,29 @@ export default function LiarPage() {
                     onClick={startGame}
                     disabled={busy || joinedCount < 3 || phase !== "PREP"}
                   >
-                    시작
+                    게임 시작
                   </button>
+
                   <button
                     className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                    onClick={restartGame}
+                    onClick={resetRound}
                     disabled={busy}
                   >
-                    재시작
+                    게임 초기화(이번 판)
                   </button>
                 </div>
 
                 <div className="mt-2 text-xs text-gray-500">
-                  재시작은 “게임 상태만 초기화”야. PREP로 돌아간 뒤 다시 시작을 누르면 답변 입력이 뜬다.
+                  “게임 초기화(이번 판)”은 점수는 유지하고, 현재 판의 진행상태만 준비 단계로 되돌려.
                 </div>
               </section>
             ) : null}
 
+            {/* 라운드 정보 */}
             <section className="rounded-xl border bg-white p-4">
-              <div className="text-sm font-semibold">라운드</div>
+              <div className="text-sm font-semibold">현재 라운드</div>
               <div className="mt-2 text-sm text-gray-700">
-                범위: <span className="font-semibold">{publicState?.round.min ?? 0}</span> ~{" "}
+                숫자 범위: <span className="font-semibold">{publicState?.round.min ?? 0}</span> ~{" "}
                 <span className="font-semibold">{publicState?.round.max ?? 0}</span>
               </div>
 
@@ -490,11 +603,12 @@ export default function LiarPage() {
                   onClick={requestQuestionChange}
                   disabled={busy || phase !== "PREP" || aliveCount < 3}
                 >
-                  질문 변경
+                  질문 바꾸기
                 </button>
               </div>
             </section>
 
+            {/* 답변 입력 */}
             {phase === "ANSWERING" ? (
               <AnswerBox
                 playerId={playerId}
@@ -506,31 +620,112 @@ export default function LiarPage() {
               />
             ) : null}
 
+            {/* 토론/재논의 */}
             {phase === "DISCUSS" || phase === "TIE_DISCUSS" ? (
-              <TimerCard
-                title={phase === "DISCUSS" ? "토론" : "동점 재논의"}
-                endsAt={
-                  phase === "DISCUSS"
-                    ? publicState?.round.discussEndsAt ?? null
-                    : publicState?.round.tieDiscussEndsAt ?? null
-                }
+              <section className="rounded-xl border bg-white p-4 space-y-3">
+                <TimerCard
+                  title={phase === "DISCUSS" ? "토론 시간" : "동점 재논의 시간"}
+                  endsAt={
+                    phase === "DISCUSS"
+                      ? publicState?.round.discussEndsAt ?? null
+                      : publicState?.round.tieDiscussEndsAt ?? null
+                  }
+                />
+
+                <button
+                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={openVotingUi}
+                  disabled={busy || !isAliveMe}
+                >
+                  투표하기
+                </button>
+
+                <div className="text-xs text-gray-500">
+                  “투표하기”를 누르고, 대상 1명을 선택한 뒤 “투표”를 눌러.
+                </div>
+              </section>
+            ) : null}
+
+            {/* 투표 패널 (phase=VOTING일 때 또는 토론에서 버튼 눌러 voteMode=true일 때) */}
+            {showVotePanel ? (
+              <section className="rounded-xl border bg-white p-4">
+                <div className="text-sm font-semibold">투표</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {phase === "VOTING"
+                    ? "지금 투표 단계야. 1명을 선택하고 투표를 눌러."
+                    : "아직 공식 투표 단계가 아닐 수 있어. (서버가 VOTING으로 바뀌면 투표 가능)"}
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {voteTargets.map(p => {
+                    const selected = p.playerId === selectedVoteTargetId;
+                    return (
+                      <button
+                        key={p.playerId}
+                        type="button"
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold ${
+                          selected ? "border-black bg-gray-100" : ""
+                        }`}
+                        onClick={() => setSelectedVoteTargetId(p.playerId)}
+                        disabled={!isAliveMe || busy}
+                      >
+                        {p.nickname}
+                      </button>
+                    );
+                  })}
+                  {voteTargets.length === 0 ? (
+                    <div className="text-sm text-gray-500">투표할 대상이 없어.</div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                    onClick={() => {
+                      setVoteMode(false);
+                      setSelectedVoteTargetId("");
+                    }}
+                    disabled={busy}
+                  >
+                    닫기
+                  </button>
+
+                  <button
+                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    onClick={submitVote}
+                    disabled={busy || !canVoteNow || !selectedVoteTargetId}
+                  >
+                    투표
+                  </button>
+                </div>
+
+                {!canVoteNow ? (
+                  <div className="mt-2 text-xs text-red-600">
+                    {phase !== "VOTING" ? "아직 투표 단계가 아니야." : "관전자 상태라 투표할 수 없어."}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {/* 답변 공개/결과 */}
+            {phase === "REVEAL" || phase === "RESULT" ? (
+              <RevealCard
+                players={publicState?.players ?? []}
+                answers={publicState?.round.answersByPlayerId ?? {}}
               />
             ) : null}
 
-            {phase === "REVEAL" || phase === "RESULT" ? (
-              <RevealCard players={publicState?.players ?? []} answers={publicState?.round.answersByPlayerId ?? {}} />
-            ) : null}
-
+            {/* 게임 종료 */}
             {phase === "GAME_OVER" ? (
               <section className="rounded-xl border bg-white p-4">
-                <div className="text-lg font-bold">게임 종료</div>
+                <div className="text-lg font-bold">게임이 끝났어</div>
                 <div className="mt-2 text-sm text-gray-700">
                   우승자:{" "}
                   <span className="font-semibold">
                     {publicState?.players.find(p => p.playerId === publicState?.championPlayerId)?.nickname ?? "?"}
                   </span>
                 </div>
-                <div className="mt-1 text-sm text-gray-500">방장이 재시작하면 새 게임이 시작돼.</div>
+                <div className="mt-1 text-sm text-gray-500">방장이 “게임 초기화(이번 판)”을 누르면 다시 시작할 수 있어.</div>
               </section>
             ) : null}
           </>
@@ -549,10 +744,10 @@ function TimerCard({ title, endsAt }: { title: string; endsAt: number | null }) 
   const ms = remainingMs(endsAt);
   const sec = Math.ceil(ms / 1000);
   return (
-    <section className="rounded-xl border bg-white p-4">
+    <div>
       <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-2 text-2xl font-bold">{sec}s</div>
-    </section>
+      <div className="mt-2 text-2xl font-bold">{sec}초</div>
+    </div>
   );
 }
 
@@ -618,7 +813,7 @@ function AnswerBox({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId, value: n }),
       });
-      if (!res.ok) setErr("제출 실패(상태가 바뀌었을 수 있음).");
+      if (!res.ok) setErr("제출에 실패했어. (상태가 바뀌었을 수 있어)");
     } catch {
       setErr("네트워크 오류");
     } finally {
@@ -631,7 +826,7 @@ function AnswerBox({
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold">답변 입력</div>
         <div className="text-xs text-gray-500">
-          {submittedCount}/{aliveCount} · {sec}s
+          {submittedCount}/{aliveCount} · {sec}초
         </div>
       </div>
 
