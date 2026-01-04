@@ -49,9 +49,19 @@ function toMeState(state: GameState, playerId: string): MeState {
   const min = state.round?.min ?? 0;
   const max = state.round?.max ?? 0;
 
-  // 질문은 LIAR에게만 숨김(=null)
   const text = findQuestionText(state.round?.questionId);
-  const question = role === "LIAR" ? null : text;
+
+  // ✅ REVEAL 이후엔 라이어도 질문 공개
+  const revealOrLater =
+    state.phase === "REVEAL" ||
+    state.phase === "DISCUSS" ||
+    state.phase === "VOTING" ||
+    state.phase === "TIE_DISCUSS" ||
+    state.phase === "RESULT" ||
+    state.phase === "GAME_OVER";
+
+  // ✅ 라이어는 REVEAL 전까지만 질문 숨김
+  const question = role === "LIAR" && !revealOrLater ? null : text;
 
   return { role, min, max, question };
 }
