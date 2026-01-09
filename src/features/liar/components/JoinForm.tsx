@@ -65,7 +65,7 @@ export function JoinForm({ nickname, joinErr, busy, publicState, onChangeNicknam
           <div className="flex-1">
             <div className="text-sm font-semibold text-amber-800 mb-1">게임 진행 중</div>
             <div className="text-xs text-amber-700">
-              지금은 게임이 진행 중이라 참가할 수 없어요. 새 게임(대기/준비 단계)에서 참가할 수 있어요.
+              지금은 게임이 진행 중이라 참가할 수 없어요. 잠시만 기다려주세요.
             </div>
           </div>
         </div>

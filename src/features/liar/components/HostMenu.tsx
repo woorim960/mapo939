@@ -224,7 +224,6 @@ export function HostMenu({
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">
-              <span>🚀</span>
               <span>게임 시작</span>
             </span>
           )}
@@ -241,7 +240,6 @@ export function HostMenu({
           disabled={busy}
         >
           <span className="flex items-center justify-center gap-2">
-            <span>🔄</span>
             <span>이번판 초기화</span>
           </span>
         </button>
