@@ -1,4 +1,4 @@
-import MembersBoard from "@/components/MembersBoard";
+import { MembersBoard } from "@/features/attendance/components/MembersBoard";
 
 export default function Page() {
   return (

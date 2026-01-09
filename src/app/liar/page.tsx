@@ -18,7 +18,6 @@ type PublicPlayer = {
   nickname: string;
   isAlive: boolean;
   isHost: boolean;
-  // ✅ 점수 표시용 (API에서 내려주면 표시, 없으면 0)
   score?: number;
 };
 
@@ -43,9 +42,11 @@ type PublicState = {
   lastEliminatedWasTroll: boolean;
   championPlayerId: string | null;
 
-  // ✅ (선택) 서버가 내려주면 GAME_OVER에서 “승리자 전원” 표시 가능
   winnerPlayerIds?: string[];
-  finalChampionPlayerIds?: string[]; // ✅ 최종 우승자
+  finalChampionPlayerIds?: string[];
+
+  // ✅ 서버가 내려주는 자동 새게임 시작 시각
+  autoRestartAt?: number | null;
 };
 
 type MeState = {
@@ -69,16 +70,12 @@ function getLS(key: string): string | null {
 function setLS(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 function removeLS(key: string): void {
   try {
     localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function remainingMs(endsAt: number | null): number {
@@ -124,7 +121,6 @@ function roleLabel(role: MeState["role"]): string {
   }
 }
 
-/** ✅ API 에러코드를 짧고 쉽게 */
 function msgFromErrorCode(code?: string): string {
   switch (code) {
     case "invalid_input":
@@ -169,10 +165,17 @@ function parseNonNegativeInt(s: string): number | null {
   return n;
 }
 
+function canJoinNow(phase: Phase): boolean {
+  return phase === "LOBBY" || phase === "PREP";
+}
+
 export default function LiarPage() {
   const [playerId, setPlayerId] = useState<string>("");
   const [nickname, setNickname] = useState<string>("");
   const [joined, setJoined] = useState<boolean>(false);
+
+  // ✅ 새로고침 등으로 참가자 아님 → 관전 잠금 모드
+  const [spectatorLocked, setSpectatorLocked] = useState<boolean>(false);
 
   const [publicState, setPublicState] = useState<PublicState | null>(null);
   const [me, setMe] = useState<MeState | null>(null);
@@ -185,48 +188,42 @@ export default function LiarPage() {
   // ✅ 투표 UI 상태
   const [voteMode, setVoteMode] = useState<boolean>(false);
   const [selectedVoteTargetId, setSelectedVoteTargetId] = useState<string>("");
-
-  // ✅ 내가 투표한 대상 (프론트 잠금용)
   const [myVotedTargetId, setMyVotedTargetId] = useState<string>("");
-
-  // ✅ "투표하러 가기" 버튼 중복 클릭 방지
   const [goVoteClicked, setGoVoteClicked] = useState<boolean>(false);
 
-  // ✅ 방장 역할 수 커스텀 입력(프론트) — 0 이상 정수, 합 <= 인원수만 검증
+  // ✅ 방장 역할 수 커스텀 입력
   const [roleLiarInput, setRoleLiarInput] = useState<string>("");
   const [roleTrollInput, setRoleTrollInput] = useState<string>("");
   const [roleAudienceInput, setRoleAudienceInput] = useState<string>("");
   const [roleConfigErr, setRoleConfigErr] = useState<string>("");
   const [resetClicked, setResetClicked] = useState(false);
-
-  // ✅ 사용자가 직접 건드렸는지(자동 기본값 덮어쓰기 방지)
   const [roleTouched, setRoleTouched] = useState<boolean>(false);
 
-  // ✅ 게임 방법
   const [showHowTo, setShowHowTo] = useState(false);
 
+  // ✅ 최종 우승 축하 오버레이
+  const [showFinalCelebrate, setShowFinalCelebrate] = useState(false);
 
-  /** ✅ 서버 start와 동일한 기본 배치 */
+  /** 서버와 동일한 기본 배치 */
   function defaultRoleCounts(n: number): { liar: number; troll: number; audience: number } {
     if (n < 3) return { liar: 0, troll: 0, audience: n };
 
     const liar = Math.max(1, Math.floor((n + 1) / 4));
 
     let troll = 0;
-    if (n === 3) {
-      troll = 0;
-    } else {
+    if (n === 3) troll = 0;
+    else {
       const r = n % 4;
       if (r === 0 || r === 1) troll = liar;
       else if (r === 2) troll = liar + 1;
-      else troll = Math.max(0, liar - 1); // r === 3
+      else troll = Math.max(0, liar - 1);
     }
 
     const audience = n - liar - troll;
     return { liar, troll, audience };
   }
 
-  // 최신 version을 stale closure 없이 쓰기 위한 ref
+  // 최신 version ref
   const publicVersionRef = useRef<number>(0);
   useEffect(() => {
     publicVersionRef.current = publicState?.version ?? publicVersionRef.current;
@@ -239,63 +236,35 @@ export default function LiarPage() {
   const joinedCount = publicState?.players.length ?? 0;
   const aliveCount = publicState?.players.filter(p => p.isAlive).length ?? 0;
 
+  // ✅ PREP에서만 자동 역할 기본값 채우기
   useEffect(() => {
-    // ✅ PREP에서만 자동 채움
     if (phase !== "PREP") return;
-
-    // ✅ 이미 사용자가 만졌으면 자동 덮어쓰기 금지
     if (roleTouched) return;
 
-    const n = joinedCount; // 또는 aliveCount
+    const n = joinedCount;
     const base = defaultRoleCounts(n);
-
     setRoleLiarInput(String(base.liar));
     setRoleTrollInput(String(base.troll));
     setRoleAudienceInput(String(base.audience));
   }, [phase, joinedCount, roleTouched]);
 
+  // ✅ phase 변화에 따른 투표 UI 초기화
   useEffect(() => {
-  if (!publicState) return;
+    if (!publicState) return;
+    const ph = publicState.phase;
 
-  const ph = publicState.phase;
+    if (ph === "PREP" || ph === "TIE_DISCUSS" || ph === "DISCUSS") {
+      setMyVotedTargetId("");
+      setSelectedVoteTargetId("");
+      setVoteMode(false);
+      setGoVoteClicked(false);
+      return;
+    }
 
-  // ✅ PREP로 돌아가면: 완전 초기화
-  if (ph === "PREP") {
-    setMyVotedTargetId("");
-    setSelectedVoteTargetId("");
-    setVoteMode(false);
-    setGoVoteClicked(false);
-    return;
-  }
-
-  // ✅ 동점 재논의 진입: 재투표 준비
-  if (ph === "TIE_DISCUSS") {
-    setMyVotedTargetId("");
-    setSelectedVoteTargetId("");
-    setVoteMode(false);
-    setGoVoteClicked(false);
-    return;
-  }
-
-  // ✅ 핵심: 게임이 안 끝나서 DISCUSS로 복귀하는 경우에도 재투표 가능해야 함
-  if (ph === "DISCUSS") {
-    setMyVotedTargetId("");
-    setSelectedVoteTargetId("");
-    setVoteMode(false);
-    setGoVoteClicked(false);
-    return;
-  }
-
-  // ✅ REVEAL / RESULT / LOBBY 등으로 이동하면
-  // "이동 중…" 상태(goVoteClicked)만 풀어주기 (원하면 여기서 더 초기화해도 됨)
-  if (ph === "REVEAL" || ph === "RESULT" || ph === "LOBBY") {
-    setGoVoteClicked(false);
-  }
-
-  // ✅ VOTING일 때는 goVoteClicked 유지해서 "방장이 눌렀다" 표시 가능
-}, [publicState?.phase]);
-
-
+    if (ph === "REVEAL" || ph === "RESULT" || ph === "LOBBY") {
+      setGoVoteClicked(false);
+    }
+  }, [publicState?.phase]);
 
   const isHost = useMemo(() => {
     if (!publicState || !playerId) return false;
@@ -311,7 +280,6 @@ export default function LiarPage() {
     return (publicState?.players ?? []).filter(p => p.isAlive);
   }, [publicState?.players]);
 
-  // ✅ 내가 이미 답변 제출했는지
   const mySubmittedValue = useMemo(() => {
     if (!publicState || !playerId) return null;
     const v = publicState.round.answersByPlayerId?.[playerId];
@@ -319,20 +287,17 @@ export default function LiarPage() {
   }, [publicState, playerId]);
   const iAlreadySubmitted = mySubmittedValue !== null;
 
-  // ✅ 투표권: 생존자 누구나 + phase=VOTING일 때만
+  // ✅ 투표권: 참가 + 생존 + 투표단계
   const canVoteNow = useMemo(() => {
     return joined && isAliveMe && phase === "VOTING";
   }, [joined, isAliveMe, phase]);
 
-  // ✅ 투표 대상: 생존자 중 자기 제외
   const voteTargets = useMemo(() => {
     return alivePlayers.filter(p => p.playerId !== playerId);
   }, [alivePlayers, playerId]);
 
-  // ✅ 투표 패널 표시 조건
   const showVotePanel = joined && (phase === "VOTING" || voteMode);
 
-  // ✅ 점수표: 점수 내림차순 정렬
   const sortedPlayers = useMemo(() => {
     const ps = [...(publicState?.players ?? [])];
     ps.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -356,26 +321,54 @@ export default function LiarPage() {
     return ids.map(id => map.get(id) ?? id);
   }, [publicState]);
 
-  // ✅ phase/round 변화에 따른 투표 UI 초기화 규칙
   useEffect(() => {
-    // 새 라운드면 전부 초기화
     setMyVotedTargetId("");
     setSelectedVoteTargetId("");
     setVoteMode(false);
     setGoVoteClicked(false);
-
-    // 역할 입력은 라운드 바뀌면 그냥 유지(원하면 초기화로 바꿔도 됨)
   }, [publicState?.round.index]);
 
-  // ✅ “투표하러 가기”는 방장만 노출 (요구사항)
   const canShowGoVoteButton = useMemo(() => {
     if (!joined) return false;
     if (!isHost) return false;
-    // 방장은 생존 여부와 무관하게? → 원래는 생존자만. 요구는 “방장만 가능”이었고
-    // 투표 시작은 진행 제어이므로 방장 생존 여부와 무관하게 열어두는게 운영상 편함.
-    // 원하면 isAliveMe도 추가.
     return phase === "REVEAL" || phase === "DISCUSS" || phase === "TIE_DISCUSS" || phase === "VOTING";
   }, [joined, isHost, phase]);
+
+  // ✅ GAME_OVER 축하 오버레이 자동 노출 / 자동 닫힘
+  const finalChampionIds = useMemo(() => {
+    return publicState?.finalChampionPlayerIds ?? [];
+  }, [publicState?.finalChampionPlayerIds]);
+
+  const finalChampionNames = useMemo(() => {
+    if (!publicState || finalChampionIds.length === 0) return [];
+    const map = new Map(publicState.players.map(p => [p.playerId, p.nickname] as const));
+    return finalChampionIds.map(id => map.get(id) ?? id);
+  }, [publicState, finalChampionIds]);
+
+  useEffect(() => {
+    if (!publicState) return;
+
+    // GAME_OVER + 최종우승자 있으면 바로 오버레이
+    if (publicState.phase === "GAME_OVER" && (publicState.finalChampionPlayerIds ?? []).length > 0) {
+      setShowFinalCelebrate(true);
+      return;
+    }
+
+    // 새 게임으로 돌아오면 오버레이 종료
+    if (publicState.phase === "LOBBY" || publicState.phase === "PREP") {
+      setShowFinalCelebrate(false);
+    }
+  }, [publicState?.phase, publicState?.finalChampionPlayerIds]);
+
+  // ✅ 새로고침/세션 꼬임으로 spectatorLocked일 때,
+  // 새게임(LOBBY/PREP) 되면 "참가 가능" 안내를 토스트로 한 번 띄우기
+  useEffect(() => {
+    if (!spectatorLocked) return;
+    if (!publicState) return;
+    if (canJoinNow(publicState.phase)) {
+      setToast("새 게임이 시작됐어요. 지금부터 참가할 수 있어요!");
+    }
+  }, [spectatorLocked, publicState?.phase]);
 
   async function resetAll(): Promise<void> {
     setBusy(true);
@@ -401,7 +394,7 @@ export default function LiarPage() {
     }
   }
 
-  // localStorage load + resume
+  // ✅ localStorage load + resume
   useEffect(() => {
     let cancelled = false;
 
@@ -415,10 +408,12 @@ export default function LiarPage() {
         if (!cancelled) {
           setNickname("");
           setJoined(false);
+          setSpectatorLocked(false);
         }
         return;
       }
 
+      // 닉네임이 LS에 있다면 "참여 재개" 시도
       try {
         const res = await fetch(`/api/liar/me`, {
           method: "POST",
@@ -427,13 +422,12 @@ export default function LiarPage() {
         });
 
         if (!res.ok) {
-          removeLS("liar_nickname");
-          removeLS("liar_version");
+          // ✅ 참여자가 아니면 관전 잠금 모드로 전환
           if (!cancelled) {
-            setNickname("");
+            setNickname(savedNick);
             setJoined(false);
             setMe(null);
-            setPublicState(null);
+            setSpectatorLocked(true);
           }
           return;
         }
@@ -444,11 +438,14 @@ export default function LiarPage() {
           setNickname(savedNick);
           setMe(data);
           setJoined(true);
+          setSpectatorLocked(false);
         }
       } catch {
+        // 네트워크 오류면 일단 닉네임 유지 + 관전 잠금(안전)
         if (!cancelled) {
           setNickname(savedNick);
-          setJoined(true);
+          setJoined(false);
+          setSpectatorLocked(true);
         }
       }
     };
@@ -459,9 +456,9 @@ export default function LiarPage() {
     };
   }, []);
 
-  // polling public state
+  // ✅ public state polling: joined가 아니어도(관전) 계속 돌리기
   useEffect(() => {
-    if (!joined) return;
+    if (!playerId) return;
 
     let timer: number | null = null;
     let stopped = false;
@@ -495,9 +492,9 @@ export default function LiarPage() {
       stopped = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [joined]);
+  }, [playerId]);
 
-  // poll my role/question
+  // ✅ poll my role/question (joined일 때만)
   useEffect(() => {
     if (!joined) return;
     if (!playerId) return;
@@ -519,7 +516,10 @@ export default function LiarPage() {
           const d = (await res.json()) as MeState;
           setMe(d);
         } else {
+          // ✅ 중간에 참가자에서 빠지면 관전 잠금으로 전환
           setMe(null);
+          setJoined(false);
+          setSpectatorLocked(true);
         }
       } catch {
         // ignore
@@ -535,8 +535,7 @@ export default function LiarPage() {
     };
   }, [joined, playerId]);
 
-  // ✅ DISCUSS(첫 토론) / TIE_DISCUSS(재논의) 타이머 종료되면 “투표 UI”만 자동 오픈
-  // 실제 투표 단계 전환은: (1) state.ts auto advance (DISCUSS 종료 시 VOTING) + (2) 방장 vote-start
+  // DISCUSS/TIE_DISCUSS 타이머 끝나면 voteMode만 자동 오픈
   useEffect(() => {
     if (!joined) return;
     if (!publicState) return;
@@ -557,13 +556,7 @@ export default function LiarPage() {
 
     const t = window.setTimeout(() => setVoteMode(true), ms);
     return () => window.clearTimeout(t);
-  }, [
-    joined,
-    isAliveMe,
-    publicState?.phase,
-    publicState?.round.discussEndsAt,
-    publicState?.round.tieDiscussEndsAt,
-  ]);
+  }, [joined, publicState?.phase, publicState?.round.discussEndsAt, publicState?.round.tieDiscussEndsAt]);
 
   async function join(): Promise<void> {
     setJoinErr("");
@@ -574,6 +567,12 @@ export default function LiarPage() {
     }
     if (!playerId) {
       setJoinErr("세션 준비 중");
+      return;
+    }
+
+    // ✅ 진행 중이면 참가 막기(요구: 새게임이 진행되면 참여 가능)
+    if (publicState && !canJoinNow(publicState.phase)) {
+      setJoinErr("지금은 관전만 가능해요. 새 게임에서 참가할 수 있어요.");
       return;
     }
 
@@ -589,6 +588,7 @@ export default function LiarPage() {
         setLS("liar_nickname", nn);
         setNickname(nn);
         setJoined(true);
+        setSpectatorLocked(false);
 
         removeLS("liar_version");
         setPublicState(null);
@@ -604,11 +604,9 @@ export default function LiarPage() {
     }
   }
 
-  /** ✅ 방장 역할 수 입력 검증 + payload 생성
-   * - 빈칸이면 "미지정" → 서버 기본 알고리즘 사용
-   * - 값이 들어왔으면: 0 이상 정수 + 합 <= 전체 인원(또는 생존 인원) 검증
-   */
-  function buildRoleOverridePayload(): { liarCount?: number; trollCount?: number; audienceCount?: number } | null {
+  function buildRoleOverridePayload():
+    | { liarCount?: number; trollCount?: number; audienceCount?: number }
+    | null {
     setRoleConfigErr("");
 
     const liarN = parseNonNegativeInt(roleLiarInput);
@@ -616,46 +614,36 @@ export default function LiarPage() {
     const audN = parseNonNegativeInt(roleAudienceInput);
 
     const allEmpty = liarN === null && trollN === null && audN === null;
-    if (allEmpty) return {}; // 미지정 → 서버 기본값
+    if (allEmpty) return {};
 
-    // 부분 입력 허용? (요구는 "자유롭게 입력", 대신 합 검증) → 빈칸은 0 취급하면 제일 직관적
-    // 하지만 "입력된 게 없다면 기본"이므로, 하나라도 입력하면 빈칸은 0으로 간주
     const liar = liarN ?? 0;
     const troll = trollN ?? 0;
     const aud = audN ?? 0;
 
     const sum = liar + troll + aud;
-
-    // ✅ “모든 인원수 이하” = joinedCount 기준(요구사항 문구대로)
-    // (만약 “생존 인원수 기준”이 더 맞으면 aliveCount로 바꾸면 됨)
     const limit = joinedCount;
 
     if (liar === 0) {
       setRoleConfigErr(`라이어는 1명 이상이어야 해요`);
       return null;
     }
-
     if (aud === 0) {
       setRoleConfigErr(`관객은 1명 이상이어야 해요`);
       return null;
     }
-
     if (sum > limit) {
       setRoleConfigErr(`역할 합(${sum})이 인원수(${limit})를 넘어요`);
       return null;
     }
-
     if (sum < limit) {
       setRoleConfigErr(`역할 합(${sum})이 인원수(${limit})보다 적어요`);
       return null;
     }
-
     if (liar >= aud) {
       setRoleConfigErr(`관객은 라이어보다 많아야 해요`);
       return null;
     }
 
-    // 0 이상 정수는 parse에서 보장됨
     return { liarCount: liar, trollCount: troll, audienceCount: aud };
   }
 
@@ -670,7 +658,6 @@ export default function LiarPage() {
       const res = await fetch(`/api/liar/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ start API가 이 필드를 받도록 서버 start 코드도 반영 필요
         body: JSON.stringify({ playerId, ...rolePayload }),
       });
 
@@ -683,29 +670,6 @@ export default function LiarPage() {
       removeLS("liar_version");
       publicVersionRef.current = 0;
       setToast("게임 시작");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function requestQuestionChange(): Promise<void> {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/liar/question-change`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
-      });
-
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        setToast(msgFromErrorCode(j?.error));
-        return;
-      }
-
-      removeLS("liar_version");
-      publicVersionRef.current = 0;
-      setToast("요청 완료");
     } finally {
       setBusy(false);
     }
@@ -730,28 +694,23 @@ export default function LiarPage() {
 
       removeLS("liar_version");
       publicVersionRef.current = 0;
-      setPublicState(null);
-      setMe(null);
 
-      // UI 초기화
       setVoteMode(false);
       setSelectedVoteTargetId("");
       setMyVotedTargetId("");
       setGoVoteClicked(false);
+
       setToast("이번 판 초기화");
     } finally {
       setBusy(false);
     }
   }
 
-  // ✅ "투표하러 가기" — 방장만 가능
   async function goToVoting(): Promise<void> {
     if (!isHost) return;
 
     setGoVoteClicked(true);
     setVoteMode(true);
-
-    // 투표 기능 초기화(재논의 → 재투표 대비)
     setSelectedVoteTargetId("");
     setMyVotedTargetId("");
 
@@ -790,12 +749,11 @@ export default function LiarPage() {
       });
 
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string; phase?: string } | null;
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
         setToast(msgFromErrorCode(j?.error));
         return;
       }
 
-      // ✅ 내 투표 기록(프론트 잠금)
       setMyVotedTargetId(selectedVoteTargetId);
       setVoteMode(true);
 
@@ -837,42 +795,45 @@ export default function LiarPage() {
 
   const roundWinners = useMemo(() => {
     const ids = publicState?.winnerPlayerIds;
-    if (Array.isArray(ids) && ids.length > 0) return ids; // ✅ 승자 전원
-
-    // ✅ fallback: 기존 로직(1명)
+    if (Array.isArray(ids) && ids.length > 0) return ids;
     if (publicState?.championPlayerId) return [publicState.championPlayerId];
-
     return [];
   }, [publicState?.winnerPlayerIds, publicState?.championPlayerId]);
 
-  const finalChampionSet = useMemo(() => {
-    // 1) 서버가 배열을 내려주는 경우
-    const ids = (publicState as any)?.finalChampionPlayerIds as string[] | undefined;
-    if (Array.isArray(ids) && ids.length > 0) return new Set(ids);
-
-    // 2) (만약 서버가 단일만 내려준다면) fallback 단일 id 지원
-    const single = (publicState as any)?.finalChampionPlayerId as string | null | undefined;
-    if (single) return new Set([single]);
-
-    return new Set<string>();
-  }, [
-    (publicState as any)?.finalChampionPlayerIds,
-    (publicState as any)?.finalChampionPlayerId,
-  ]);
+  const finalChampionSet = useMemo(() => new Set(finalChampionIds), [finalChampionIds]);
 
   const deadTrollId =
-    publicState?.lastEliminatedWasTroll
-      ? publicState?.lastEliminatedPlayerId
-      : null;
+    publicState?.lastEliminatedWasTroll ? publicState?.lastEliminatedPlayerId : null;
 
+  // ✅ GAME_OVER 오버레이 카운트다운
+  const [celebrateTick, setCelebrateTick] = useState(0);
+  useEffect(() => {
+    if (!showFinalCelebrate) return;
+    const t = window.setInterval(() => setCelebrateTick(v => v + 1), 250);
+    return () => window.clearInterval(t);
+  }, [showFinalCelebrate]);
+
+  const autoRestartAt = publicState?.autoRestartAt ?? null;
+  const restartInSec = useMemo(() => {
+    if (!autoRestartAt) return null;
+    return Math.ceil(remainingMs(autoRestartAt) / 1000);
+  }, [autoRestartAt, celebrateTick]);
 
   return (
     <main className="min-h-screen bg-gray-100 p-4">
+      {/* ✅ 최종 우승 축하 오버레이 */}
+      {showFinalCelebrate ? (
+        <FinalChampionOverlay
+          names={finalChampionNames}
+          restartInSec={restartInSec}
+        />
+      ) : null}
+
       {/* 게임 방법 모달 */}
-      <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} /> 
+      <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} />
 
       <div className="mx-auto max-w-md space-y-3">
-        {/* 간단 토스트 */}
+        {/* 토스트 */}
         {toast ? (
           <div className="rounded-xl border bg-white px-3 py-2 text-xs text-gray-700">
             {toast}
@@ -906,7 +867,6 @@ export default function LiarPage() {
           <div className="text-[11px] text-gray-500">버전 {publicState?.version ?? 0}</div>
         </div>
 
-
         {/* 상단 상태 카드 */}
         <header className="rounded-xl border bg-white p-4">
           <div className="flex items-center justify-between">
@@ -920,13 +880,40 @@ export default function LiarPage() {
           </div>
 
           <div className="mt-1 text-sm text-gray-700">
-            내 역할 <span className="font-semibold">{meRoleKo}</span>
-            {!isAliveMe && joined ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
+            내 상태{" "}
+            <span className="font-semibold">
+              {joined ? `참가 (${meRoleKo})` : spectatorLocked ? "관전(참여 불가)" : "미참가"}
+            </span>
+            {joined && !isAliveMe ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
           </div>
         </header>
 
-        {/* 참가 전 */}
-        {!joined ? (
+        {/* ✅ 관전 잠금 안내 */}
+        {!joined && spectatorLocked ? (
+          <section className="rounded-xl border bg-white p-4">
+            <div className="text-sm font-semibold">현재는 관전만 가능해요</div>
+            <div className="mt-2 text-sm text-gray-700">
+              새로고침 등으로 인해 <span className="font-semibold">현재 게임 참가자에서 제외</span>됐어요.
+            </div>
+            <div className="mt-2 text-xs text-gray-500">
+              게임 진행 중에는 참가할 수 없고, <span className="font-semibold">새 게임(대기/준비)</span>가 되면 참가할 수 있어요.
+            </div>
+
+            <button
+              className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
+              onClick={join}
+              disabled={busy || !publicState || !canJoinNow(publicState.phase)}
+              title={!publicState ? "상태 불러오는 중" : canJoinNow(publicState.phase) ? "참가 가능" : "새 게임에서 참가 가능"}
+            >
+              {publicState && canJoinNow(publicState.phase) ? "다시 참가하기" : "새 게임 대기 중…"}
+            </button>
+
+            {joinErr ? <div className="mt-2 text-sm text-red-600">{joinErr}</div> : null}
+          </section>
+        ) : null}
+
+        {/* 참가 전(일반) */}
+        {!joined && !spectatorLocked ? (
           <section className="rounded-xl border bg-white p-4">
             <div className="text-sm font-semibold">닉네임</div>
             <input
@@ -936,418 +923,484 @@ export default function LiarPage() {
               placeholder="중복 불가"
             />
             {joinErr ? <div className="mt-2 text-sm text-red-600">{joinErr}</div> : null}
+
             <button
               className="mt-3 w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
               onClick={join}
-              disabled={busy}
+              disabled={busy || (publicState ? !canJoinNow(publicState.phase) : false)}
+              title={publicState && !canJoinNow(publicState.phase) ? "진행 중에는 참가 불가" : "참가하기"}
             >
               참가하기
             </button>
-          </section>
-        ) : (
-          <>
-            {/* 참여자 목록 + 점수 */}
-            <section className="rounded-xl border bg-white p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">참여자</div>
-                <div className="text-xs text-gray-500">점수</div>
+
+            {publicState && !canJoinNow(publicState.phase) ? (
+              <div className="mt-2 text-xs text-gray-500">
+                지금은 게임이 진행 중이라 참가할 수 없어요. 새 게임에서 참가할 수 있어요.
               </div>
+            ) : null}
+          </section>
+        ) : null}
 
-              <div className="mt-2 space-y-2">
-                {sortedPlayers.map(p => {
-                  const score = p.score ?? 0;
-                  const isMe = p.playerId === playerId;
-                  const isFinalChampion = finalChampionSet.has(p.playerId);
+        {/* 참여자 목록 + 점수 (관전이어도 보여줌) */}
+        <section className="rounded-xl border bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold">참여자</div>
+            <div className="text-xs text-gray-500">점수</div>
+          </div>
 
-                  return (
-                    <div
-                      key={p.playerId}
+          <div className="mt-2 space-y-2">
+            {(sortedPlayers ?? []).map(p => {
+              const score = p.score ?? 0;
+              const isMe = p.playerId === playerId;
+              const isFinalChampion = finalChampionSet.has(p.playerId);
+
+              return (
+                <div
+                  key={p.playerId}
+                  className={[
+                    "flex items-center justify-between rounded-lg border px-3 py-2",
+                    isFinalChampion
+                      ? "bg-purple-50 border-purple-300 ring-2 ring-purple-200"
+                      : isMe
+                        ? "bg-gray-50"
+                        : "bg-white",
+                  ].join(" ")}
+                >
+                  <div className="text-sm">
+                    <span className={["font-semibold", isFinalChampion ? "text-purple-800" : ""].join(" ")}>
+                      {p.nickname}
+                    </span>
+
+                    {isMe ? <span className="ml-2 text-xs text-gray-500">(나)</span> : null}
+                    {p.isHost ? <span className="ml-2 text-xs text-blue-600">(방장)</span> : null}
+                    {!p.isAlive ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isFinalChampion ? (
+                      <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[11px] font-semibold text-purple-900">
+                        최종 우승
+                      </span>
+                    ) : null}
+
+                    {roundWinners.includes(p.playerId) ? (
+                      <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800">
+                        WIN
+                      </span>
+                    ) : null}
+
+                    {deadTrollId === p.playerId ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">
+                        트롤
+                      </span>
+                    ) : null}
+
+                    <span
                       className={[
-                        "flex items-center justify-between rounded-lg border px-3 py-2",
-                        // ✅ 최종 우승자 라인 강조 (여러명이면 여러명 전부)
-                        isFinalChampion
-                          ? "bg-purple-50 border-purple-300 ring-2 ring-purple-200"
-                          : isMe
-                            ? "bg-gray-50"
-                            : "bg-white",
+                        "rounded-full px-2 py-0.5 text-[11px] font-semibold !text-white",
+                        isFinalChampion ? "bg-purple-800" : "bg-gray-900",
                       ].join(" ")}
                     >
-                      <div className="text-sm">
-                        <span className={["font-semibold", isFinalChampion ? "text-purple-800" : ""].join(" ")}>
-                          {p.nickname}
-                        </span>
-
-                        {isMe ? <span className="ml-2 text-xs text-gray-500">(나)</span> : null}
-                        {p.isHost ? <span className="ml-2 text-xs text-blue-600">(방장)</span> : null}
-                        {!p.isAlive ? <span className="ml-2 text-xs text-gray-500">(사망)</span> : null}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* ✅ 최종 우승 태그 */}
-                        {isFinalChampion ? (
-                          <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[11px] font-semibold text-purple-900">
-                            최종 우승
-                          </span>
-                        ) : null}
-
-                        {/* ✅ 라운드 승자 전원 WIN */}
-                        {roundWinners.includes(p.playerId) ? (
-                          <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800">
-                            WIN
-                          </span>
-                        ) : null}
-
-                        {/* ✅ 트롤이 죽었을 때만 표시 */}
-                          {deadTrollId === p.playerId ? (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">
-                              트롤
-                            </span>
-                          ) : null}
-
-                        {/* ✅ 점수 뱃지도 최종 우승자면 강조 */}
-                        <span
-                          className={[
-                            "rounded-full px-2 py-0.5 text-[11px] font-semibold !text-white",
-                            isFinalChampion ? "bg-purple-800" : "bg-gray-900",
-                          ].join(" ")}
-                        >
-                          {score}점
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* 방장 메뉴 */}
-            {isHost ? (
-              <section className="rounded-xl border bg-white p-4 space-y-3">
-                <div className="text-sm font-semibold">방장 메뉴</div>
-
-                {/* ✅ 역할 수 커스텀 입력 폼 */}
-                <div className="rounded-xl border bg-gray-50 p-3">
-                  <div className="text-xs font-semibold text-gray-700">역할 수</div>
-
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <label className="text-xs text-gray-600">
-                      라이어
-                      <input
-                        className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
-                        value={roleLiarInput}
-                        onChange={e => {
-                          setRoleTouched(true);
-                          setRoleLiarInput(e.target.value);
-                        }}
-                        inputMode="numeric"
-                        placeholder="0"
-                        disabled={busy || phase !== "PREP"}
-                      />
-                    </label>
-
-                    <label className="text-xs text-gray-600">
-                      트롤
-                      <input
-                        className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
-                        value={roleTrollInput}
-                        onChange={e => {
-                          setRoleTouched(true);
-                          setRoleTrollInput(e.target.value);
-                        }}
-                        inputMode="numeric"
-                        placeholder="0"
-                        disabled={busy || phase !== "PREP"}
-                      />
-                    </label>
-
-                    <label className="text-xs text-gray-600">
-                      관객
-                      <input
-                        className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
-                        value={roleAudienceInput}
-                        onChange={e => {
-                          setRoleTouched(true);
-                          setRoleAudienceInput(e.target.value);
-                        }}
-                        inputMode="numeric"
-                        placeholder="0"
-                        disabled={busy || phase !== "PREP"}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="mt-2 text-[11px] text-gray-500">
-                    0 이상 정수 · 역할 합 = 인원수({joinedCount})
-                  </div>
-
-                  {/* ✅ 원하면 “기본값으로 되돌리기” 버튼 하나 추가 */}
-                  <button
-                    type="button"
-                    className={`
-                      mt-2 w-full rounded-lg border px-3 py-2 text-sm font-semibold
-                      transition-all duration-200
-                      ${resetClicked ? "bg-gray-200 scale-[0.97]" : "bg-white hover:bg-gray-50"}
-                      disabled:opacity-50
-                    `}
-                    onClick={() => {
-                      const base = defaultRoleCounts(joinedCount);
-
-                      setResetClicked(true);          // ✅ 눌림 효과 ON
-                      setRoleTouched(false);          // 자동 관리로 복귀
-                      setRoleLiarInput(String(base.liar));
-                      setRoleTrollInput(String(base.troll));
-                      setRoleAudienceInput(String(base.audience));
-
-                      // ✅ 300ms 후 효과 해제
-                      setTimeout(() => setResetClicked(false), 300);
-                    }}
-                    disabled={busy || phase !== "PREP"}
-                  >
-                    {resetClicked ? "기본값 적용" : "기본값으로 되돌리기"}
-                  </button>
-
-
-                  {roleConfigErr ? <div className="mt-2 text-xs text-red-600">{roleConfigErr}</div> : null}
-                </div>
-
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
-                    onClick={startGame}
-                    disabled={busy || joinedCount < 3 || phase !== "PREP"}
-                  >
-                    게임 시작
-                  </button>
-
-                  <button
-                    className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                    onClick={resetRound}
-                    disabled={busy}
-                  >
-                    이번 판 초기화
-                  </button>
-                </div>
-
-                <div className="text-xs text-gray-500">이번 판 초기화는 점수는 유지됩니다.</div>
-              </section>
-            ) : null}
-
-            {/* 라운드 정보 */}
-            <section className="rounded-xl border bg-white p-4">
-              <div className="text-sm font-semibold">현재 라운드</div>
-
-              <div className="mt-2 text-sm text-gray-700">
-                숫자 범위 <span className="font-semibold">{publicState?.round.min ?? 0}</span> ~{" "}
-                <span className="font-semibold">{publicState?.round.max ?? 0}</span>
-              </div>
-
-              {questionText ? (
-                <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
-                  <div className="text-xs text-gray-500">질문</div>
-                  <div className="mt-1 font-semibold text-gray-900">{questionText}</div>
-                </div>
-              ) : (
-                <div className="mt-2 text-sm text-gray-500">질문 비공개</div>
-              )}
-
-              {/* <div className="mt-3 flex items-center justify-between gap-2">
-                <div className="text-xs text-gray-500">
-                  질문 변경 동의 {publicState?.round.questionChangeCount ?? 0}/{aliveCount}
-                </div>
-
-                <button
-                  className="shrink-0 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                  onClick={requestQuestionChange}
-                  disabled={busy || phase !== "PREP" || aliveCount < 3}
-                >
-                  질문 바꾸기
-                </button>
-              </div> */}
-            </section>
-
-            {/* 답변 입력 */}
-            {phase === "ANSWERING" ? (
-              <AnswerBox
-                playerId={playerId}
-                min={publicState?.round.min ?? 0}
-                max={publicState?.round.max ?? 0}
-                submittedCount={Object.keys(publicState?.round.answersByPlayerId ?? {}).length}
-                aliveCount={aliveCount}
-                endsAt={publicState?.round.answeringEndsAt ?? null}
-                alreadySubmitted={iAlreadySubmitted}
-                submittedValue={mySubmittedValue}
-                onToast={setToast}
-              />
-            ) : null}
-
-            {/* 답변 공개 */}
-            {phase === "REVEAL" ? (
-              <RevealCard players={publicState?.players ?? []} answers={publicState?.round.answersByPlayerId ?? {}} />
-            ) : null}
-
-            {/* ✅ 투표하러 가기: 방장만 */}
-            {canShowGoVoteButton ? (
-              <section className="rounded-xl border bg-white p-4">
-                <button
-                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
-                  onClick={goToVoting}
-                  disabled={busy || goVoteClicked}
-                  title="투표 단계로 전환"
-                >
-                  {goVoteClicked ? "이동 중…" : "투표하러 가기"}
-                </button>
-
-                <div className="mt-2 text-xs text-gray-500">
-                  방장만 가능합니다.
-                </div>
-              </section>
-            ) : null}
-
-            {/* 토론/재논의(본문에도 유지) */}
-            {phase === "DISCUSS" || phase === "TIE_DISCUSS" ? (
-              <section className="rounded-xl border bg-white p-4 space-y-2">
-                <TimerCard
-                  title={phase === "DISCUSS" ? "토론 시간" : "동점 재논의 시간"}
-                  endsAt={phase === "DISCUSS" ? publicState?.round.discussEndsAt ?? null : publicState?.round.tieDiscussEndsAt ?? null}
-                />
-                <div className="text-xs text-gray-500">
-                  동점이면 재논의 후 다시 투표로 이동해야 합니다.
-                </div>
-              </section>
-            ) : null}
-
-            {/* 투표 패널 */}
-            {showVotePanel ? (
-              <section className="rounded-xl border bg-white p-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">투표</div>
-                  <div className="text-xs text-gray-500">{phaseKo}</div>
-                </div>
-
-                <div className="mt-1 text-xs text-gray-500">
-                  {phase === "VOTING" ? "대상 선택 후 투표" : "투표 단계가 아닐 수 있어요"}
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {voteTargets.map(p => {
-                    const selected = p.playerId === selectedVoteTargetId;
-                    const count = publicState?.round.voteCounts?.[p.playerId] ?? 0;
-
-                    return (
-                      <button
-                        key={p.playerId}
-                        type="button"
-                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold ${
-                          selected ? "border-black bg-gray-100" : ""
-                        }`}
-                        onClick={() => setSelectedVoteTargetId(p.playerId)}
-                        disabled={!isAliveMe || busy || !!myVotedTargetId}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>{p.nickname}</span>
-                          <span className="text-xs text-gray-500">표 {count}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {voteTargets.length === 0 ? <div className="text-sm text-gray-500">대상이 없습니다</div> : null}
-                </div>
-
-                <div className="mt-3 grid gap-2">
-                  <button
-                    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
-                    onClick={submitVote}
-                    disabled={busy || !canVoteNow || !selectedVoteTargetId || !!myVotedTargetId}
-                  >
-                    {myVotedTargetId ? "투표 완료" : "투표"}
-                  </button>
-                </div>
-
-                {myVotedTargetId ? (
-                  <div className="mt-2 text-xs text-gray-600">내 투표 완료</div>
-                ) : null}
-
-                {!canVoteNow ? (
-                  <div className="mt-2 text-xs text-red-600">
-                    {phase !== "VOTING" ? "투표 단계 아님" : "사망자는 불가"}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {/* 결과 단계 */}
-            {phase === "RESULT" ? (
-              <section className="rounded-xl border bg-white p-4 space-y-3">
-                <div className="text-sm font-semibold">결과</div>
-
-                <div className="text-sm text-gray-700">
-                  탈락 <span className="font-semibold">{eliminatedName ?? "미정"}</span>
-                  {publicState?.lastEliminatedPlayerId ? (
-                    <span className="ml-2 text-xs text-gray-500">
-                      ({publicState.lastEliminatedWasTroll ? "트롤" : "관객/라이어"})
+                      {score}점
                     </span>
-                  ) : null}
+                  </div>
                 </div>
+              );
+            })}
+            {sortedPlayers.length === 0 ? (
+              <div className="text-sm text-gray-500">참여자가 없습니다</div>
+            ) : null}
+          </div>
+        </section>
 
-                <button
-                  className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
-                  onClick={finalizeResult}
-                  disabled={busy || !isAliveMe}
-                >
-                  결과 확정
-                </button>
-              </section>
+        {/* 방장 메뉴 (joined일 때만) */}
+        {joined && isHost ? (
+          <section className="rounded-xl border bg-white p-4 space-y-3">
+            <div className="text-sm font-semibold">방장 메뉴</div>
+
+            <div className="rounded-xl border bg-gray-50 p-3">
+              <div className="text-xs font-semibold text-gray-700">역할 수</div>
+
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <label className="text-xs text-gray-600">
+                  라이어
+                  <input
+                    className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
+                    value={roleLiarInput}
+                    onChange={e => {
+                      setRoleTouched(true);
+                      setRoleLiarInput(e.target.value);
+                    }}
+                    inputMode="numeric"
+                    placeholder="0"
+                    disabled={busy || phase !== "PREP"}
+                  />
+                </label>
+
+                <label className="text-xs text-gray-600">
+                  트롤
+                  <input
+                    className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
+                    value={roleTrollInput}
+                    onChange={e => {
+                      setRoleTouched(true);
+                      setRoleTrollInput(e.target.value);
+                    }}
+                    inputMode="numeric"
+                    placeholder="0"
+                    disabled={busy || phase !== "PREP"}
+                  />
+                </label>
+
+                <label className="text-xs text-gray-600">
+                  관객
+                  <input
+                    className="mt-1 w-full rounded-lg border px-2 py-1 text-sm outline-none"
+                    value={roleAudienceInput}
+                    onChange={e => {
+                      setRoleTouched(true);
+                      setRoleAudienceInput(e.target.value);
+                    }}
+                    inputMode="numeric"
+                    placeholder="0"
+                    disabled={busy || phase !== "PREP"}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-2 text-[11px] text-gray-500">
+                0 이상 정수 · 역할 합 = 인원수({joinedCount})
+              </div>
+
+              <button
+                type="button"
+                className={`
+                  mt-2 w-full rounded-lg border px-3 py-2 text-sm font-semibold
+                  transition-all duration-200
+                  ${resetClicked ? "bg-gray-200 scale-[0.97]" : "bg-white hover:bg-gray-50"}
+                  disabled:opacity-50
+                `}
+                onClick={() => {
+                  const base = defaultRoleCounts(joinedCount);
+
+                  setResetClicked(true);
+                  setRoleTouched(false);
+                  setRoleLiarInput(String(base.liar));
+                  setRoleTrollInput(String(base.troll));
+                  setRoleAudienceInput(String(base.audience));
+
+                  setTimeout(() => setResetClicked(false), 300);
+                }}
+                disabled={busy || phase !== "PREP"}
+              >
+                {resetClicked ? "기본값 적용" : "기본값으로 되돌리기"}
+              </button>
+
+              {roleConfigErr ? <div className="mt-2 text-xs text-red-600">{roleConfigErr}</div> : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
+                onClick={startGame}
+                disabled={busy || joinedCount < 3 || phase !== "PREP"}
+              >
+                게임 시작
+              </button>
+
+              <button
+                className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                onClick={resetRound}
+                disabled={busy}
+              >
+                이번 판 초기화
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-500">
+              이번 판 초기화는 점수는 유지됩니다. (단, 누군가 300점을 달성한 상태면 서버가 자동 새게임에서 점수를 초기화합니다.)
+            </div>
+          </section>
+        ) : null}
+
+        {/* 라운드 정보 */}
+        <section className="rounded-xl border bg-white p-4">
+          <div className="text-sm font-semibold">현재 라운드</div>
+
+          <div className="mt-2 text-sm text-gray-700">
+            숫자 범위 <span className="font-semibold">{publicState?.round.min ?? 0}</span> ~{" "}
+            <span className="font-semibold">{publicState?.round.max ?? 0}</span>
+          </div>
+
+          {joined ? (
+            questionText ? (
+              <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
+                <div className="text-xs text-gray-500">질문</div>
+                <div className="mt-1 font-semibold text-gray-900">{questionText}</div>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-gray-500">질문 비공개</div>
+            )
+          ) : (
+            <div className="mt-2 text-sm text-gray-500">참가자만 질문을 확인할 수 있어요.</div>
+          )}
+        </section>
+
+        {/* 답변 입력 */}
+        {joined && phase === "ANSWERING" ? (
+          <AnswerBox
+            playerId={playerId}
+            min={publicState?.round.min ?? 0}
+            max={publicState?.round.max ?? 0}
+            submittedCount={Object.keys(publicState?.round.answersByPlayerId ?? {}).length}
+            aliveCount={aliveCount}
+            endsAt={publicState?.round.answeringEndsAt ?? null}
+            alreadySubmitted={iAlreadySubmitted}
+            submittedValue={mySubmittedValue}
+            onToast={setToast}
+          />
+        ) : null}
+
+        {/* 답변 공개 */}
+        {phase === "REVEAL" ? (
+          <RevealCard players={publicState?.players ?? []} answers={publicState?.round.answersByPlayerId ?? {}} />
+        ) : null}
+
+        {/* 투표하러 가기(방장만) */}
+        {joined && canShowGoVoteButton ? (
+          <section className="rounded-xl border bg-white p-4">
+            <button
+              className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
+              onClick={goToVoting}
+              disabled={busy || goVoteClicked}
+              title="투표 단계로 전환"
+            >
+              {goVoteClicked ? "이동 중…" : "투표하러 가기"}
+            </button>
+            <div className="mt-2 text-xs text-gray-500">방장만 가능합니다.</div>
+          </section>
+        ) : null}
+
+        {/* 토론/재논의 */}
+        {phase === "DISCUSS" || phase === "TIE_DISCUSS" ? (
+          <section className="rounded-xl border bg-white p-4 space-y-2">
+            <TimerCard
+              title={phase === "DISCUSS" ? "토론 시간" : "동점 재논의 시간"}
+              endsAt={phase === "DISCUSS" ? publicState?.round.discussEndsAt ?? null : publicState?.round.tieDiscussEndsAt ?? null}
+            />
+            <div className="text-xs text-gray-500">동점이면 재논의 후 다시 투표로 이동해야 합니다.</div>
+          </section>
+        ) : null}
+
+        {/* 투표 패널 */}
+        {showVotePanel ? (
+          <section className="rounded-xl border bg-white p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">투표</div>
+              <div className="text-xs text-gray-500">{phaseKo}</div>
+            </div>
+
+            <div className="mt-1 text-xs text-gray-500">
+              {phase === "VOTING" ? "대상 선택 후 투표" : "투표 단계가 아닐 수 있어요"}
+            </div>
+
+            {!joined ? (
+              <div className="mt-3 rounded-lg border bg-gray-50 p-3 text-sm text-gray-700">
+                관전 중에는 투표할 수 없어요.
+              </div>
             ) : null}
 
-            {/* 게임 종료 */}
-            {phase === "GAME_OVER" ? (
-              <section className="rounded-xl border bg-white p-4 space-y-2">
-                <div className="text-lg font-bold">게임 종료</div>
+            <div className="mt-3 space-y-2">
+              {voteTargets.map(p => {
+                const selected = p.playerId === selectedVoteTargetId;
+                const count = publicState?.round.voteCounts?.[p.playerId] ?? 0;
 
-                {/* ✅ 서버가 winnerPlayerIds 내려주면 “승리자 전원” 표시 */}
-                {winnerNames.length > 0 ? (
-                  <div className="text-sm text-gray-700">
-                    승리: <span className="font-semibold">{winnerNames.join(", ")}</span>
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-700">
-                    우승자: <span className="font-semibold">{championName ?? "미정"}</span>
-                  </div>
-                )}
+                return (
+                  <button
+                    key={p.playerId}
+                    type="button"
+                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold ${
+                      selected ? "border-black bg-gray-100" : ""
+                    }`}
+                    onClick={() => setSelectedVoteTargetId(p.playerId)}
+                    disabled={!joined || !isAliveMe || busy || !!myVotedTargetId}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>{p.nickname}</span>
+                      <span className="text-xs text-gray-500">표 {count}</span>
+                    </div>
+                  </button>
+                );
+              })}
 
-                <div className="text-xs text-gray-500">점수 반영은 서버에서 처리됩니다.</div>
-              </section>
+              {voteTargets.length === 0 ? <div className="text-sm text-gray-500">대상이 없습니다</div> : null}
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              <button
+                className="rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
+                onClick={submitVote}
+                disabled={busy || !canVoteNow || !selectedVoteTargetId || !!myVotedTargetId}
+              >
+                {myVotedTargetId ? "투표 완료" : "투표"}
+              </button>
+            </div>
+
+            {myVotedTargetId ? <div className="mt-2 text-xs text-gray-600">내 투표 완료</div> : null}
+
+            {!canVoteNow && joined ? (
+              <div className="mt-2 text-xs text-red-600">{phase !== "VOTING" ? "투표 단계 아님" : "사망자는 불가"}</div>
             ) : null}
-          </>
-        )}
+          </section>
+        ) : null}
+
+        {/* 결과 단계 */}
+        {phase === "RESULT" ? (
+          <section className="rounded-xl border bg-white p-4 space-y-3">
+            <div className="text-sm font-semibold">결과</div>
+
+            <div className="text-sm text-gray-700">
+              탈락 <span className="font-semibold">{eliminatedName ?? "미정"}</span>
+              {publicState?.lastEliminatedPlayerId ? (
+                <span className="ml-2 text-xs text-gray-500">
+                  ({publicState.lastEliminatedWasTroll ? "트롤" : "관객/라이어"})
+                </span>
+              ) : null}
+            </div>
+
+            <button
+              className="w-full rounded-lg bg-black px-3 py-2 text-sm font-semibold !text-white disabled:opacity-50"
+              onClick={finalizeResult}
+              disabled={busy || !joined || !isAliveMe}
+            >
+              결과 확정
+            </button>
+
+            {!joined ? (
+              <div className="text-xs text-gray-500">관전 중에는 결과 확정을 누를 수 없어요.</div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* GAME_OVER 안내(오버레이는 따로 뜸) */}
+        {phase === "GAME_OVER" ? (
+          <section className="rounded-xl border bg-white p-4 space-y-2">
+            <div className="text-lg font-bold">게임 종료</div>
+
+            {winnerNames.length > 0 ? (
+              <div className="text-sm text-gray-700">
+                승리: <span className="font-semibold">{winnerNames.join(", ")}</span>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-700">
+                우승자: <span className="font-semibold">{championName ?? "미정"}</span>
+              </div>
+            )}
+
+            <div className="text-xs text-gray-500">
+              최종 우승자가 있으면 잠시 후 자동으로 새 게임이 시작됩니다.
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );
 }
 
-/** 상단에 크게 보이는 타이머 */
-function TimerPill({ title, endsAt, hint }: { title: string; endsAt: number | null; hint: string }) {
-  const [, setTick] = useState<number>(0);
-  useEffect(() => {
-    const t = window.setInterval(() => setTick(v => v + 1), 250);
-    return () => window.clearInterval(t);
-  }, []);
-  const sec = Math.ceil(remainingMs(endsAt) / 1000);
-  const danger = sec <= 10;
+/* ✅ 화려한 최종 우승 오버레이 */
+function FinalChampionOverlay({ names, restartInSec }: { names: string[]; restartInSec: number | null }) {
+  const title =
+    names.length === 0
+      ? "최종 우승!"
+      : names.length === 1
+        ? `🎉 최종 우승자는 ${names[0]} 입니다!`
+        : `🎉 최종 우승자는 ${names.join(", ")} 입니다!`;
 
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-xs text-gray-500">{title} · {hint}</div>
-        <div className={`text-3xl font-extrabold ${danger ? "text-red-600" : "text-gray-900"}`}>{sec}초</div>
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-4">
+      {/* 배경 반짝이 */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <Sparkles />
       </div>
-      <div className="text-xs text-gray-500">남은 시간</div>
+
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-purple-700 via-fuchsia-600 to-amber-500 p-1 shadow-2xl">
+        <div className="rounded-[22px] bg-black/20 backdrop-blur-md p-6 text-center">
+          <div className="mx-auto mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1 text-xs font-semibold text-white/90">
+            🏆 FINAL CHAMPION
+          </div>
+
+          <div className="text-2xl font-extrabold tracking-tight text-white drop-shadow">
+            {title}
+          </div>
+
+          <div className="mt-3 text-sm text-white/90">
+            {restartInSec === null ? (
+              "새 게임을 준비 중…"
+            ) : (
+              <>
+                <span className="font-semibold">{restartInSec}초</span> 후 새 게임이 시작됩니다
+              </>
+            )}
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <Badge text="✨ 축하해요" />
+            <Badge text="🔥 300 달성" />
+            <Badge text="🎊 새 게임 시작" />
+          </div>
+
+          <div className="mt-6 text-xs text-white/80">
+            점수는 자동으로 초기화되고, 새 게임으로 이어집니다.
+          </div>
+
+          {/* 카드 내부 광원 효과 */}
+          <div className="pointer-events-none absolute -inset-16 opacity-30 blur-3xl">
+            <div className="h-40 w-40 animate-pulse rounded-full bg-white/50" />
+          </div>
+        </div>
+
+        {/* 아래 움직이는 라인 */}
+        <div className="absolute inset-x-0 bottom-0 h-1 animate-pulse bg-white/30" />
+      </div>
     </div>
   );
 }
 
+function Badge({ text }: { text: string }) {
+  return (
+    <div className="rounded-xl bg-white/15 px-2 py-2 text-[11px] font-semibold text-white/90">
+      {text}
+    </div>
+  );
+}
+
+function Sparkles() {
+  const items = Array.from({ length: 18 }).map((_, i) => i);
+  return (
+    <>
+      {items.map(i => (
+        <span
+          key={i}
+          className="absolute h-1.5 w-1.5 animate-[sparkle_1.8s_ease-in-out_infinite] rounded-full bg-white/80"
+          style={{
+            left: `${(i * 37) % 100}%`,
+            top: `${(i * 53) % 100}%`,
+            animationDelay: `${(i % 9) * 0.12}s`,
+            opacity: 0.7,
+          }}
+        />
+      ))}
+      <style jsx>{`
+        @keyframes sparkle {
+          0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+          50% { transform: translateY(-10px) scale(1.6); opacity: 1; }
+        }
+      `}</style>
+    </>
+  );
+}
+
+/** 타이머 카드 */
 function TimerCard({ title, endsAt }: { title: string; endsAt: number | null }) {
   const [, setTick] = useState<number>(0);
   useEffect(() => {
@@ -1516,14 +1569,14 @@ function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      onMouseDown={onClose} // 바깥 클릭 닫기
+      onMouseDown={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="게임 방법"
     >
       <div
         className="w-full max-w-md rounded-2xl bg-white shadow-xl"
-        onMouseDown={e => e.stopPropagation()} // 내부 클릭은 닫기 방지
+        onMouseDown={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="text-sm font-bold">🕵️‍♂️ 라이어 게임 방법</div>
@@ -1533,17 +1586,13 @@ function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         </div>
 
         <div className="max-h-[70vh] overflow-auto px-4 py-4 space-y-4">
-          {/* ✅ 최상단 한 줄 카피 */}
           <div className="relative overflow-hidden rounded-2xl border border-gray-900 bg-gradient-to-r from-gray-900 to-gray-800 px-4 py-3 text-center">
-            {/* 은은한 움직이는 라인 */}
             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
             <div className="relative z-10 text-sm font-extrabold tracking-wide text-white">
               잡거나, 숨거나, 일부러 죽거나
             </div>
           </div>
 
-          {/* ✅ 최상단: 게임 목표(캐주얼) */}
           <section className="rounded-xl border bg-gray-50 p-3">
             <div className="text-xs font-semibold text-gray-700 mb-2">🎯 게임 목표</div>
 
@@ -1572,47 +1621,6 @@ function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             </div>
           </section>
 
-          {/* 기존 섹션들 유지 */}
-          <section className="rounded-xl border bg-gray-50 p-3">
-            <div className="text-xs font-semibold text-gray-700 mb-2">🎭 역할 세부 설명</div>
-
-            <div className="space-y-3">
-              <div className="rounded-lg border bg-white p-3">
-                <div className="text-sm font-semibold">👥 관객</div>
-                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
-                  <li>질문을 알고 있음</li>
-                  <li>라이어를 찾아내는 것이 목표</li>
-                  <li>
-                    <span className="font-semibold">라이어가 모두 죽으면 관객 승리</span>(+100점)
-                  </li>
-                </ul>
-              </div>
-
-              <div className="rounded-lg border bg-white p-3">
-                <div className="text-sm font-semibold">🕵️ 라이어</div>
-                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
-                  <li>질문을 모른 채 정해진 범위 안에서 답변</li>
-                  <li>관객인 척 연기하며 살아남아야 함</li>
-                  <li>
-                    <span className="font-semibold">라이어 수 = 관객 수</span>가 되면 라이어 승리(+100점)
-                  </li>
-                </ul>
-              </div>
-
-              <div className="rounded-lg border bg-white p-3">
-                <div className="text-sm font-semibold">🤡 트롤</div>
-                <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
-                  <li>질문을 알고 있음</li>
-                  <li>투표로 죽는 것이 목표</li>
-                  <li>
-                    <span className="font-semibold">죽으면 본인만 보너스 점수</span> 획득(+100점)
-                  </li>
-                  <li>트롤은 게임 승패에 포함되지 않음</li>
-                </ul>
-              </div>
-            </div>
-          </section>
-
           <section className="rounded-xl border p-3">
             <div className="text-xs font-semibold text-gray-700 mb-2">▶️ 게임 진행</div>
             <ol className="list-decimal pl-5 text-sm text-gray-700 space-y-1">
@@ -1622,20 +1630,6 @@ function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
               <li>투표 → 1명 탈락</li>
             </ol>
             <div className="mt-2 text-xs text-gray-500">동점이면 재논의 후 재투표</div>
-          </section>
-
-          <section className="rounded-xl border p-3">
-            <div className="text-xs font-semibold text-gray-700 mb-2">🏆 점수 & 종료</div>
-            <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
-              <li>관객 승리 → 관객 +100</li>
-              <li>라이어 승리 → 라이어 +100 (트롤 제외)</li>
-              <li>트롤이 죽으면 → 트롤 본인 +100 (게임은 계속)</li>
-            </ul>
-
-            <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">
-              <div className="font-semibold">🎯 최종 승리 조건</div>
-              <div className="mt-1 text-gray-700">가장 먼저 300점을 달성해야한다</div>
-            </div>
           </section>
         </div>
 
@@ -1651,4 +1645,3 @@ function HowToModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     </div>
   );
 }
-

@@ -6,6 +6,8 @@ export const runtime = "nodejs";
 
 type Body = { playerId: string };
 
+const AUTO_RESTART_DELAY_MS = 4500;
+
 function isAlive(state: GameState, playerId: string): boolean {
   return Boolean(state.players?.find(p => p.playerId === playerId)?.isAlive);
 }
@@ -75,7 +77,6 @@ export async function POST(req: Request): Promise<Response> {
 
     const round = (state.round ?? ({} as any)) as any;
 
-    // ✅ 한 라운드 RESULT 처리에서만 중복 방지
     const trollDeathRewarded: boolean = Boolean(round.trollDeathRewarded);
 
     const votesByVoterId: Record<string, string> = round.votesByVoterId ?? {};
@@ -93,7 +94,6 @@ export async function POST(req: Request): Promise<Response> {
           ...round,
           tieDiscussEndsAt: Date.now() + 60_000,
           votesByVoterId: {},
-          // trollDeathRewarded 유지
         },
       };
 
@@ -106,7 +106,7 @@ export async function POST(req: Request): Promise<Response> {
     const eliminatedRole = (rolesByPlayerId?.[eliminatedId] ?? null) as Role | null;
     const lastEliminatedWasTroll = eliminatedRole === "TROLL";
 
-    // ✅ 탈락 반영
+    // 탈락 반영
     const nextPlayers = (state.players ?? []).map(pl =>
       pl.playerId === eliminatedId ? { ...pl, isAlive: false } : pl
     );
@@ -114,18 +114,13 @@ export async function POST(req: Request): Promise<Response> {
     const stateAfterElim: GameState = { ...state, players: nextPlayers };
     const { aliveAudience, aliveLiar, aliveTroll } = aliveCountByRole(stateAfterElim, rolesByPlayerId);
 
-    // ✅ 게임 종료 조건(너가 말한 그대로)
-    // 1) 라이어 전멸 -> 관객 승리
+    // 게임 종료 조건
     const audienceWin = aliveLiar === 0;
-
-    // 2) 라이어 수 == 관객 수 -> 라이어 승리
-    // (트롤 수는 비교에 포함하지 않음)
     const liarWin = !audienceWin && aliveLiar === aliveAudience;
 
-    // ✅ 트롤 죽음 보상: 트롤이 죽었고, 이번 RESULT에서 아직 지급 전이면 지급
     const shouldPayTrollDeathBonus = Boolean(lastEliminatedWasTroll && !trollDeathRewarded);
 
-    // ✅ 게임이 계속되는 경우: DISCUSS로 복귀
+    // 게임 계속: DISCUSS로 복귀
     if (!audienceWin && !liarWin) {
       const nextContinue: GameState = {
         ...state,
@@ -140,8 +135,6 @@ export async function POST(req: Request): Promise<Response> {
           votesByVoterId: {},
           discussEndsAt: Date.now() + 180_000,
           tieDiscussEndsAt: null,
-
-          // ✅ 이번 RESULT 처리에서 트롤 보상은 더 못 하게 표시
           trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
         },
       };
@@ -149,7 +142,6 @@ export async function POST(req: Request): Promise<Response> {
       const r = await updateGameCAS(dbVersion, nextContinue);
       if (!r.ok) continue;
 
-      // ✅ CAS 성공 후 점수 반영 (중복 지급 방지)
       if (shouldPayTrollDeathBonus) {
         await p.liarPlayer.update({
           where: { id: eliminatedId },
@@ -168,10 +160,7 @@ export async function POST(req: Request): Promise<Response> {
       });
     }
 
-    // ✅ 여기부터는 "게임 종료" 케이스
-    // 승리자 산정은 룰대로:
-    // - 관객 승리: AUDIENCE만 +100
-    // - 라이어 승리: LIAR만 +100 (트롤은 받지 않음)
+    // 게임 종료 케이스
     const winners: string[] = [];
     for (const pl of stateAfterElim.players ?? []) {
       const role = rolesByPlayerId?.[pl.playerId] ?? null;
@@ -180,11 +169,13 @@ export async function POST(req: Request): Promise<Response> {
       if (audienceWin) {
         if (role === "AUDIENCE") winners.push(pl.playerId);
       } else if (liarWin) {
-        if (role === "LIAR") winners.push(pl.playerId); // ✅ 트롤 제외
+        if (role === "LIAR") winners.push(pl.playerId);
       }
     }
 
     const championPlayerId = winners[0] ?? null;
+
+    const now = Date.now();
 
     const nextGameOver: GameState = {
       ...state,
@@ -195,6 +186,7 @@ export async function POST(req: Request): Promise<Response> {
       championPlayerId,
       winnerPlayerIds: winners,
       phase: "GAME_OVER",
+      autoRestartAt: now + AUTO_RESTART_DELAY_MS,
       round: {
         ...round,
         trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
@@ -204,10 +196,9 @@ export async function POST(req: Request): Promise<Response> {
     const res = await updateGameCAS(dbVersion, nextGameOver);
     if (!res.ok) continue;
 
-    // ✅ CAS 성공 후 점수 반영
+    // 점수 반영
     const tx: any[] = [];
 
-    // 승리자 +100
     if (winners.length > 0) {
       tx.push(
         p.liarPlayer.updateMany({
@@ -217,8 +208,6 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    // 트롤이 죽은 경우, 게임이 종료되더라도 "트롤 본인 +100"은 룰에 따라 지급
-    // (너의 룰: 트롤이 죽으면 본인만 100점 얻는다. 게임 종료와 무관)
     if (shouldPayTrollDeathBonus) {
       tx.push(
         p.liarPlayer.update({
