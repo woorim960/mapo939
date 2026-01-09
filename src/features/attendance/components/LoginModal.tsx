@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Modal } from "@/shared/components/Modal";
+import { ApiError } from "@/shared/utils/error";
 import { login } from "../api/admin";
 
 type LoginModalProps = {
@@ -31,19 +32,18 @@ export function LoginModal({ open, initialError, onClose, onSuccess }: LoginModa
     setLoginLoading(true);
     setLoginErr(null);
     try {
-      const res = await login(username, password);
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoginErr(err?.error ?? "로그인 실패");
-        return;
-      }
-
+      await login(username, password);
       onSuccess();
       onClose();
       setLoginErr(null);
       if (usernameRef.current) usernameRef.current.value = "";
       if (passwordRef.current) passwordRef.current.value = "";
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setLoginErr(err.message);
+      } else {
+        setLoginErr("로그인 실패");
+      }
     } finally {
       setLoginLoading(false);
     }

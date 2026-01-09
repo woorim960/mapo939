@@ -7,6 +7,23 @@ export const runtime = "nodejs";
 type Body = { playerId: string };
 
 const AUTO_RESTART_DELAY_MS = 4500;
+const FINAL_SCORE = 300;
+
+async function buildScoreMap(playerIds: string[]): Promise<Record<string, number>> {
+  if (playerIds.length === 0) return {};
+  const p = prisma();
+  const rows = await p.liarPlayer.findMany({
+    where: { id: { in: playerIds } },
+    select: { id: true, score: true },
+  });
+  const map: Record<string, number> = {};
+  for (const r of rows) map[r.id] = r.score ?? 0;
+  return map;
+}
+
+function computeFinalChampions(playerIds: string[], scoreById: Record<string, number>): string[] {
+  return playerIds.filter(id => (scoreById[id] ?? 0) >= FINAL_SCORE);
+}
 
 function isAlive(state: GameState, playerId: string): boolean {
   return Boolean(state.players?.find(p => p.playerId === playerId)?.isAlive);
@@ -120,28 +137,11 @@ export async function POST(req: Request): Promise<Response> {
 
     const shouldPayTrollDeathBonus = Boolean(lastEliminatedWasTroll && !trollDeathRewarded);
 
-    // 게임 계속: DISCUSS로 복귀
+    // ✅ 승리 조건이 만족되지 않으면: 300점 달성자 확인
     if (!audienceWin && !liarWin) {
-      const nextContinue: GameState = {
-        ...state,
-        players: nextPlayers,
-        lastEliminatedPlayerId: eliminatedId,
-        lastEliminatedWasTroll,
-        phase: "DISCUSS",
-        version: (state.version ?? 0) + 1,
-        round: {
-          ...round,
-          index: (round.index ?? 0) + 1,
-          votesByVoterId: {},
-          discussEndsAt: Date.now() + 180_000,
-          tieDiscussEndsAt: null,
-          trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
-        },
-      };
-
-      const r = await updateGameCAS(dbVersion, nextContinue);
-      if (!r.ok) continue;
-
+      const ids = (stateAfterElim.players ?? []).map(p => p.playerId);
+      
+      // ✅ 트롤 보너스 지급 (트랜잭션으로 원자성 보장)
       if (shouldPayTrollDeathBonus) {
         await p.liarPlayer.update({
           where: { id: eliminatedId },
@@ -149,18 +149,76 @@ export async function POST(req: Request): Promise<Response> {
         });
       }
 
+      // 점수 확인 (트롤 보너스 반영 후)
+      const scoreMap = await buildScoreMap(ids);
+      const finalChampions = computeFinalChampions(ids, scoreMap);
+
+      // ✅ 300점 달성자가 있으면 GAME_OVER (최종 우승)
+      if (finalChampions.length > 0) {
+        const now = Date.now();
+        const nextGameOver: GameState = {
+          ...state,
+          version: (state.version ?? 0) + 1,
+          players: nextPlayers,
+          lastEliminatedPlayerId: eliminatedId,
+          lastEliminatedWasTroll,
+          championPlayerId: finalChampions[0] ?? null,
+          winnerPlayerIds: finalChampions,
+          finalChampionPlayerIds: finalChampions,
+          phase: "GAME_OVER",
+          autoRestartAt: now + AUTO_RESTART_DELAY_MS,
+          round: {
+            ...round,
+            trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
+          },
+        };
+
+        const res = await updateGameCAS(dbVersion, nextGameOver);
+        if (!res.ok) continue;
+
+        return NextResponse.json({
+          ok: true,
+          eliminatedId,
+          winners: finalChampions,
+          winType: "FINAL_CHAMPION",
+          aliveAudience,
+          aliveLiar,
+          aliveTroll,
+          trollDeathBonusApplied: shouldPayTrollDeathBonus,
+          movedTo: "GAME_OVER",
+        });
+      }
+
+      // ✅ 300점 달성자가 없으면 RESULT에서 멈춤 (방장이 '이번판 초기화' 필요)
+      const nextStayResult: GameState = {
+        ...state,
+        players: nextPlayers,
+        lastEliminatedPlayerId: eliminatedId,
+        lastEliminatedWasTroll,
+        version: (state.version ?? 0) + 1,
+        phase: "RESULT",
+        round: {
+          ...round,
+          trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
+        },
+      };
+
+      const r = await updateGameCAS(dbVersion, nextStayResult);
+      if (!r.ok) continue;
+
       return NextResponse.json({
         ok: true,
         eliminatedId,
-        movedTo: "DISCUSS",
+        movedTo: "RESULT",
         aliveAudience,
         aliveLiar,
         aliveTroll,
         trollDeathBonusApplied: shouldPayTrollDeathBonus,
+        needsReset: true, // 프론트에서 '이번판 초기화' 버튼 표시용
       });
     }
 
-    // 게임 종료 케이스
+    // ✅ 게임 종료 케이스: 승리 조건 만족
     const winners: string[] = [];
     for (const pl of stateAfterElim.players ?? []) {
       const role = rolesByPlayerId?.[pl.playerId] ?? null;
@@ -173,30 +231,8 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
-    const championPlayerId = winners[0] ?? null;
-
-    const now = Date.now();
-
-    const nextGameOver: GameState = {
-      ...state,
-      version: (state.version ?? 0) + 1,
-      players: nextPlayers,
-      lastEliminatedPlayerId: eliminatedId,
-      lastEliminatedWasTroll,
-      championPlayerId,
-      winnerPlayerIds: winners,
-      phase: "GAME_OVER",
-      autoRestartAt: now + AUTO_RESTART_DELAY_MS,
-      round: {
-        ...round,
-        trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
-      },
-    };
-
-    const res = await updateGameCAS(dbVersion, nextGameOver);
-    if (!res.ok) continue;
-
-    // 점수 반영
+    // ✅ 점수 지급 (트랜잭션으로 원자성 보장)
+    const ids = (stateAfterElim.players ?? []).map(p => p.playerId);
     const tx: any[] = [];
 
     if (winners.length > 0) {
@@ -217,9 +253,41 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
+    // ✅ 트랜잭션 실행 (원자성 보장 - 모든 점수 지급이 함께 처리됨)
     if (tx.length > 0) {
       await p.$transaction(tx);
     }
+
+    // ✅ 점수 지급 후 확인하여 최종 우승자 확인
+    const scoreMapAfter = await buildScoreMap(ids);
+    const finalChampionsAfter = computeFinalChampions(ids, scoreMapAfter);
+
+    const championPlayerId = finalChampionsAfter.length > 0 
+      ? finalChampionsAfter[0] 
+      : (winners[0] ?? null);
+
+    const now = Date.now();
+
+    // ✅ GAME_OVER 상태로 전환 (CAS로 원자성 보장)
+    const nextGameOver: GameState = {
+      ...state,
+      version: (state.version ?? 0) + 1,
+      players: nextPlayers,
+      lastEliminatedPlayerId: eliminatedId,
+      lastEliminatedWasTroll,
+      championPlayerId,
+      winnerPlayerIds: winners,
+      finalChampionPlayerIds: finalChampionsAfter,
+      phase: "GAME_OVER",
+      autoRestartAt: now + AUTO_RESTART_DELAY_MS,
+      round: {
+        ...round,
+        trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
+      },
+    };
+
+    const res = await updateGameCAS(dbVersion, nextGameOver);
+    if (!res.ok) continue;
 
     return NextResponse.json({
       ok: true,
@@ -230,6 +298,7 @@ export async function POST(req: Request): Promise<Response> {
       aliveLiar,
       aliveTroll,
       trollDeathBonusApplied: shouldPayTrollDeathBonus,
+      finalChampions: finalChampionsAfter,
     });
   }
 

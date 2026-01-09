@@ -6,6 +6,7 @@ import { useMembers } from "../hooks/useMembers";
 import { useAdmin } from "../hooks/useAdmin";
 import { useMemberForm } from "../hooks/useMemberForm";
 import { checkAttendance, markAbsent, fetchMemberStats, deleteMember, logout } from "../api";
+import { ApiError } from "@/shared/utils/error";
 import { MemberSection } from "./MemberSection";
 import { MemberModal } from "./MemberModal";
 import { MemberForm } from "./MemberForm";
@@ -46,23 +47,20 @@ export function MembersBoard() {
     if (loading) return;
 
     try {
-      const res = await checkAttendance(memberId, status);
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 401) {
-          setLoginErr("평일 출석/지각 변경은 관리자 인증이 필요합니다.");
-          setLoginOpen(true);
-        } else {
-          alert(err?.error ?? "처리 실패");
-        }
-        return;
-      }
-
+      await checkAttendance(memberId, status);
       await Promise.all([refreshAll(), refreshAdminMe()]);
       if (openMemberId === memberId) await handleOpenMemberModal(memberId);
     } catch (err) {
-      alert("처리 실패");
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setLoginErr("평일 출석/지각 변경은 관리자 인증이 필요합니다.");
+          setLoginOpen(true);
+        } else {
+          alert(err.message);
+        }
+      } else {
+        alert("처리 실패");
+      }
     }
   }
 
@@ -70,23 +68,20 @@ export function MembersBoard() {
     if (loading) return;
 
     try {
-      const res = await markAbsent(memberId);
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 401) {
-          setLoginErr("평일 결석 변경은 관리자 인증이 필요합니다.");
-          setLoginOpen(true);
-        } else {
-          alert(err?.error ?? "결석 처리 실패");
-        }
-        return;
-      }
-
+      await markAbsent(memberId);
       await Promise.all([refreshAll(), refreshAdminMe()]);
       if (openMemberId === memberId) await handleOpenMemberModal(memberId);
     } catch (err) {
-      alert("결석 처리 실패");
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setLoginErr("평일 결석 변경은 관리자 인증이 필요합니다.");
+          setLoginOpen(true);
+        } else {
+          alert(err.message);
+        }
+      } else {
+        alert("결석 처리 실패");
+      }
     }
   }
 
@@ -159,16 +154,15 @@ export function MembersBoard() {
     if (!ok) return;
 
     try {
-      const res = await deleteMember(memberStats.member.id);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert(err?.error ?? "비활성화 실패");
-        return;
-      }
+      await deleteMember(memberStats.member.id);
       await Promise.all([refreshAll(), refreshAdminMe()]);
       handleCloseMemberModal();
-    } catch {
-      alert("비활성화 실패");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        alert(err.message);
+      } else {
+        alert("비활성화 실패");
+      }
     }
   }
 

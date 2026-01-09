@@ -1,0 +1,78 @@
+// 공유 에러 처리 유틸리티
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number = 0,
+    public code?: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export type ApiErrorResponse = {
+  error: string;
+  code?: string;
+};
+
+/**
+ * API 응답에서 에러 정보 추출
+ */
+export async function extractApiError(res: Response): Promise<ApiErrorResponse> {
+  try {
+    const data = await res.json();
+    if (typeof data === "object" && data !== null && "error" in data) {
+      return data as ApiErrorResponse;
+    }
+    return { error: "잠시 후 다시 시도해주세요" };
+  } catch {
+    return { error: "잠시 후 다시 시도해주세요" };
+  }
+}
+
+/**
+ * 알 수 없는 에러를 사용자 친화적 메시지로 변환
+ */
+export function handleUnknownError(err: unknown): string {
+  if (err instanceof ApiError) {
+    return err.message;
+  }
+  if (err instanceof Error) {
+    // Error 메시지가 오류처럼 보이지 않도록 처리
+    const message = err.message;
+    if (message.includes("실패") || message.includes("오류") || message.includes("에러") || message.includes("Failed")) {
+      return "잠시 후 다시 시도해주세요";
+    }
+    return message;
+  }
+  if (typeof err === "string") {
+    // 문자열 오류 메시지도 처리
+    if (err.includes("실패") || err.includes("오류") || err.includes("에러") || err.includes("Failed")) {
+      return "잠시 후 다시 시도해주세요";
+    }
+    return err;
+  }
+  return "잠시 후 다시 시도해주세요";
+}
+
+/**
+ * 에러 로깅 (개발 환경에서만)
+ */
+export function logError(context: string, err: unknown): void {
+  if (process.env.NODE_ENV === "development") {
+    console.error(`[${context}]`, err);
+  }
+  // 프로덕션에서는 Sentry 등으로 전송 가능
+}
+
+/**
+ * 안전한 JSON 파싱
+ */
+export async function safeJsonParse<T>(res: Response): Promise<T | null> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

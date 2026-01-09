@@ -1,5 +1,4 @@
 export const runtime = "nodejs";
-console.log("LOGIN_ROUTE_LOADED");
 
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
@@ -7,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { generateSessionToken, hashToken } from "@/lib/auth";
 
 export async function POST(req: Request) {
-  console.log("LOGIN_ROUTE_HIT");
 
   try {
     const body = await req.json().catch(() => ({} as any));

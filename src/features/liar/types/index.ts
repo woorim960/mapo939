@@ -1,6 +1,17 @@
 // 라이어 게임 타입
 
-export type { Phase, Role, GameState, RoundState, PlayerInState } from "@/lib/liar/types";
+export type Role = "AUDIENCE" | "LIAR" | "TROLL";
+
+export type Phase =
+  | "LOBBY"
+  | "PREP"
+  | "ANSWERING"
+  | "REVEAL"
+  | "DISCUSS"
+  | "VOTING"
+  | "TIE_DISCUSS"
+  | "RESULT"
+  | "GAME_OVER";
 
 export type PublicPlayer = {
   playerId: string;
@@ -40,4 +51,5 @@ export type MeState = {
   min: number;
   max: number;
   question: string | null;
+  votedTargetId?: string | null;
 };

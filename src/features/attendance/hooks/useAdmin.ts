@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchAdminMe } from "../api/admin";
 import { formatLeftMs } from "../utils";
+import type { AdminMe } from "../types";
 
 export function useAdmin() {
-  const [admin, setAdmin] = useState({ isAdmin: false });
+  const [admin, setAdmin] = useState<AdminMe>({ isAdmin: false });
   const [adminLeftText, setAdminLeftText] = useState<string>("미인증");
   const adminTimerRef = useRef<number | null>(null);
 

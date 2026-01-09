@@ -12,6 +12,7 @@ type MeState = {
   min: number;
   max: number;
   question: string | null;
+  votedTargetId?: string | null;
 };
 
 function addPlayerIfMissing(state: GameState, playerId: string, nickname: string): GameState {
@@ -63,7 +64,11 @@ function toMeState(state: GameState, playerId: string): MeState {
   // ✅ 라이어는 REVEAL 전까지만 질문 숨김
   const question = role === "LIAR" && !revealOrLater ? null : text;
 
-  return { role, min, max, question };
+  // ✅ 투표 정보 포함
+  const votesByVoterId = (state.round as any)?.votesByVoterId ?? {};
+  const votedTargetId = votesByVoterId[playerId] ?? null;
+
+  return { role, min, max, question, votedTargetId };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -74,9 +79,50 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
+  // ✅ 먼저 게임 상태 확인
+  const { state } = await getOrCreateGame();
+  const phase = state.phase ?? "LOBBY";
+  const canJoinNow = phase === "LOBBY" || phase === "PREP";
+
+  // ✅ 게임 상태의 players에서 playerId 찾기
+  const playerInState = (state.players ?? []).find(p => p.playerId === playerId);
+
+  // ✅ 게임 상태에 이미 있으면 바로 반환 (DB 체크 불필요)
+  if (playerInState) {
+    return NextResponse.json(toMeState(state, playerId));
+  }
+
   const p = prisma();
 
-  // DB에 player 존재 확인(닉네임/점수)
+  // ✅ LOBBY나 PREP 상태에서는 DB에 player가 없어도 허용
+  if (canJoinNow) {
+    // DB에 있으면 게임 상태에 추가 시도
+    const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
+    
+    if (player) {
+      // DB에 있으면 게임 상태에 추가
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { state: currentState, dbVersion } = await getOrCreateGame();
+        const next = addPlayerIfMissing(currentState, playerId, player.nickname);
+
+        if (next === currentState) {
+          return NextResponse.json(toMeState(next, playerId));
+        }
+
+        const res = await updateGameCAS(dbVersion, next);
+        if (res.ok) {
+          return NextResponse.json(toMeState(next, playerId));
+        }
+      }
+
+      return NextResponse.json({ error: "concurrent_update" }, { status: 409 });
+    }
+
+    // ✅ DB에 없지만 LOBBY/PREP 상태면 기본 MeState 반환 (아직 참가 전)
+    return NextResponse.json(toMeState(state, playerId));
+  }
+
+  // ✅ 게임이 시작된 후(ANSWERING 이후)에는 DB에 player가 반드시 있어야 함
   const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
   if (!player) {
     return NextResponse.json({ error: "unknown_player" }, { status: 404 });
@@ -84,10 +130,10 @@ export async function POST(req: Request): Promise<Response> {
 
   // state에 없으면 복구(addPlayerIfMissing) + CAS
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
-    const next = addPlayerIfMissing(state, playerId, player.nickname);
+    const { state: currentState, dbVersion } = await getOrCreateGame();
+    const next = addPlayerIfMissing(currentState, playerId, player.nickname);
 
-    if (next === state) {
+    if (next === currentState) {
       return NextResponse.json(toMeState(next, playerId));
     }
 

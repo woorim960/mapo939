@@ -53,6 +53,7 @@ export type GameState = {
 
   // 최종 우승(300점)
   championPlayerId: string | null;
+  finalChampionPlayerIds?: string[];
 
   // ✅ GAME_OVER 이후 자동 리셋 예약 시간(ms epoch)
   autoRestartAt?: number | null;

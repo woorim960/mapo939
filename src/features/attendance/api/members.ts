@@ -1,22 +1,27 @@
 // 멤버 관련 API 클라이언트
 
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/shared/api/client";
 import type { Member, Stats, MemberStats } from "../types";
 
+type MembersResponse = {
+  members: Member[];
+};
+
 export async function fetchMembers(): Promise<Member[]> {
-  const res = await fetch("/api/members", { cache: "no-store" });
-  const json = await res.json();
-  return json.members ?? [];
+  const data = await apiGet<MembersResponse>("/api/members", {
+    cache: "no-store",
+  });
+  return data.members ?? [];
 }
 
 export async function fetchStats(): Promise<Stats | null> {
-  const res = await fetch("/api/stats", { cache: "no-store" });
-  const json = await res.json();
-  return json ?? null;
+  return await apiGet<Stats>("/api/stats", { cache: "no-store" });
 }
 
 export async function fetchMemberStats(memberId: string): Promise<MemberStats> {
-  const res = await fetch(`/api/members/${memberId}/stats`, { cache: "no-store" });
-  return await res.json();
+  return await apiGet<MemberStats>(`/api/members/${memberId}/stats`, {
+    cache: "no-store",
+  });
 }
 
 export async function createMember(data: {
@@ -24,27 +29,22 @@ export async function createMember(data: {
   phone: string;
   birthDate: string;
   photoUrl: string;
-}): Promise<Response> {
-  return fetch("/api/members", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+}): Promise<void> {
+  await apiPost("/api/members", data);
 }
 
-export async function updateMember(memberId: string, data: {
-  name: string;
-  phone: string;
-  birthDate: string;
-  photoUrl: string;
-}): Promise<Response> {
-  return fetch(`/api/members/${memberId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+export async function updateMember(
+  memberId: string,
+  data: {
+    name: string;
+    phone: string;
+    birthDate: string;
+    photoUrl: string;
+  }
+): Promise<void> {
+  await apiPatch(`/api/members/${memberId}`, data);
 }
 
-export async function deleteMember(memberId: string): Promise<Response> {
-  return fetch(`/api/members/${memberId}`, { method: "DELETE" });
+export async function deleteMember(memberId: string): Promise<void> {
+  await apiDelete(`/api/members/${memberId}`);
 }

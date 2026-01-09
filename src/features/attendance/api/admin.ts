@@ -1,21 +1,20 @@
 // 관리자 관련 API 클라이언트
 
+import { apiGet, apiPost } from "@/shared/api/client";
 import type { AdminMe } from "../types";
 
 export async function fetchAdminMe(): Promise<AdminMe> {
-  const res = await fetch("/api/admin/me", { cache: "no-store" });
-  const json = (await res.json().catch(() => null)) as AdminMe | null;
-  return json ?? { isAdmin: false };
+  try {
+    return await apiGet<AdminMe>("/api/admin/me", { cache: "no-store" });
+  } catch {
+    return { isAdmin: false };
+  }
 }
 
-export async function login(username: string, password: string): Promise<Response> {
-  return fetch("/api/admin/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
+export async function login(username: string, password: string): Promise<void> {
+  await apiPost("/api/admin/login", { username, password });
 }
 
-export async function logout(): Promise<Response> {
-  return fetch("/api/admin/logout", { method: "POST" });
+export async function logout(): Promise<void> {
+  await apiPost("/api/admin/logout", {}, { skipErrorLog: true });
 }

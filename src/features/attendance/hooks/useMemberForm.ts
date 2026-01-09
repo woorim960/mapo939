@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createMember, updateMember, deleteBlob } from "../api";
+import { ApiError } from "@/shared/utils/error";
 import type { MemberFormState } from "../types";
 
 const initialForm: MemberFormState = {
@@ -93,18 +94,12 @@ export function useMemberForm() {
     setError(null);
     try {
       if (form.mode === "create") {
-        const res = await createMember({
+        await createMember({
           name: form.name.trim(),
           phone: form.phone.trim(),
           birthDate: form.birthDateYmd.trim(),
           photoUrl: form.photoUrl.trim(),
         });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          setError(err?.error ?? "멤버 추가 실패");
-          return false;
-        }
 
         // 사용하지 않은 임시 이미지 삭제
         const finalUrl = form.photoUrl;
@@ -124,18 +119,12 @@ export function useMemberForm() {
         return false;
       }
 
-      const res = await updateMember(form.memberId, {
+      await updateMember(form.memberId, {
         name: form.name.trim(),
         phone: form.phone.trim(),
         birthDate: form.birthDateYmd.trim(),
         photoUrl: form.photoUrl.trim(),
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setError(err?.error ?? "멤버 수정 실패");
-        return false;
-      }
 
       // 원본 사진이 변경되었으면 삭제
       if (originalPhotoUrl && originalPhotoUrl !== form.photoUrl) {
@@ -153,6 +142,13 @@ export function useMemberForm() {
       setOriginalPhotoUrl(null);
       setForm((p) => ({ ...p, open: false }));
       return true;
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(form.mode === "create" ? "멤버 추가 실패" : "멤버 수정 실패");
+      }
+      return false;
     } finally {
       setSaving(false);
     }
