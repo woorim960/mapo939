@@ -67,12 +67,21 @@ function createInitialGameState(): GameState {
 export async function getOrCreateGame(roomId: string): Promise<{ state: GameState; dbVersion: number }> {
   const p = prisma();
 
-  const row = await p.liarGame.findUnique({ where: { id: roomId } });
+  // 먼저 방을 찾기 시도
+  let row = await p.liarGame.findUnique({ where: { id: roomId } });
+  
+  // 방을 찾지 못했을 때, 짧은 대기 후 다시 시도 (트랜잭션 커밋 대기)
+  if (!row) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    row = await p.liarGame.findUnique({ where: { id: roomId } });
+  }
+  
   if (row) {
     const state = row.stateJson as unknown as GameState;
     return { state: { ...state, version: row.version }, dbVersion: row.version };
   }
 
+  // 방이 정말 없을 때만 새로 생성
   const initial = createInitialGameState();
 
   try {
@@ -85,6 +94,7 @@ export async function getOrCreateGame(roomId: string): Promise<{ state: GameStat
       },
     });
   } catch (err) {
+    // 생성 실패 시 다시 조회 (다른 요청에서 이미 생성했을 수 있음)
     const again = await p.liarGame.findUnique({ where: { id: roomId } });
     if (!again) {
       console.error("Failed to create or load LiarGame:", err);
@@ -92,6 +102,13 @@ export async function getOrCreateGame(roomId: string): Promise<{ state: GameStat
     }
     const state = again.stateJson as unknown as GameState;
     return { state: { ...state, version: again.version }, dbVersion: again.version };
+  }
+
+  // 생성 후 실제 저장된 데이터 반환 (트랜잭션 일관성 보장)
+  const created = await p.liarGame.findUnique({ where: { id: roomId } });
+  if (created) {
+    const state = created.stateJson as unknown as GameState;
+    return { state: { ...state, version: created.version }, dbVersion: created.version };
   }
 
   return { state: initial, dbVersion: 0 };
