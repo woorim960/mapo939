@@ -24,7 +24,7 @@ import { MenuButton } from "@/features/liar/components/MenuButton";
 import { Toast } from "@/shared/components/Toast";
 import { phaseLabel, roleLabel, canJoinNow, defaultRoleCounts, getPhaseTheme } from "@/features/liar/utils";
 import { remainingMs } from "@/shared/utils/date";
-import { setLS, removeLS } from "@/shared/utils/storage";
+import { setLS, removeLS, getLS } from "@/shared/utils/storage";
 import { updateRoomName, leaveRoom, extendGracePeriod } from "@/features/liar/api";
 import type { Phase } from "@/features/liar/types";
 
@@ -312,13 +312,35 @@ export default function LiarPage() {
     // roomCreatedAt이 없으면 타이머 시작하지 않음
     if (!game.publicState?.roomCreatedAt) return;
 
+    // 이전에 자동 내보내기된 경우 타이머 실행하지 않음 (다른 방 접근 시 방해 방지)
+    const autoKickedFlag = getLS("liar_auto_kicked");
+    if (autoKickedFlag === "true") {
+      // 플래그 제거 (한 번만 체크)
+      removeLS("liar_auto_kicked");
+      return;
+    }
+
+    // 이미 플레이어가 있는 방이면 타이머 시작하지 않음 (완성된 방)
+    const hasPlayers = game.publicState?.players && game.publicState.players.length > 0;
+    if (hasPlayers) {
+      return;
+    }
+
+    // 이미 grace period가 지난 방이면 타이머 시작하지 않음 (다른 방 접근 시 방해 방지)
     const GRACE_PERIOD_MS = 60 * 1000; // 1분
+    const now = Date.now();
+    const elapsed = now - game.publicState.roomCreatedAt;
+    if (elapsed >= GRACE_PERIOD_MS) {
+      // 이미 1분이 지난 방이면 타이머 시작하지 않음
+      return;
+    }
+
     const currentRoomId = roomId; // 현재 roomId 캡처
     const currentRoomCreatedAt = game.publicState.roomCreatedAt; // 현재 방 생성 시간 캡처
     let timeoutId: number | null = null;
     let cancelled = false;
 
-    const checkAndLeave = () => {
+    const checkAndLeave = async () => {
       // roomId가 변경되었거나 참가했거나 취소되었으면 중단
       if (cancelled || roomId !== currentRoomId || game.joined) {
         return;
@@ -336,8 +358,27 @@ export default function LiarPage() {
       if (remaining <= 0) {
         // 시간이 지났고, 여전히 같은 방이고 참가하지 않았으면 내보내기
         if (!cancelled && roomId === currentRoomId && !game.joined && game.publicState?.roomCreatedAt === currentRoomCreatedAt) {
+          // 자동 내보내기 플래그 설정 (다른 방 접근 시 타이머 실행 방지)
+          setLS("liar_auto_kicked", "true");
+          
+          // 플레이어 정보 제거 (게임 상태에 있든 없든 시도)
+          if (game.playerId) {
+            try {
+              // DB와 게임 상태에서 플레이어 제거 시도
+              await leaveRoom(roomId, game.playerId);
+            } catch (err) {
+              // 에러가 발생해도 계속 진행 (플레이어가 없을 수도 있음)
+              console.error("Failed to remove player on auto kick:", err);
+            }
+          }
+          
+          // localStorage 정리
+          removeLS("liar_player_id");
+          removeLS("liar_nickname");
+          removeLS("liar_version");
+          
           actions.setToast("방 생성 후 1분이 지나 자동으로 방에서 나갑니다.");
-          handleLeaveRoom();
+          router.push("/liar");
         }
         return;
       }
@@ -357,7 +398,7 @@ export default function LiarPage() {
         timeoutId = null;
       }
     };
-  }, [roomId, game.publicState?.roomCreatedAt, game.joined, actions, handleLeaveRoom]);
+  }, [roomId, game.publicState?.roomCreatedAt, game.joined, game.playerId, game.publicState?.players, actions, router]);
 
   const questionText = game.me?.question ?? null;
   const phaseTheme = getPhaseTheme(phase);
