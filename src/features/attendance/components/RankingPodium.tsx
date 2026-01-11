@@ -21,186 +21,250 @@ export function RankingPodium({ rankedGroups, onOpen }: RankingPodiumProps) {
   const thirdMember = third[0];
 
   return (
-    <section className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-center mb-6">
-        <div className="text-2xl font-bold bg-gradient-to-r from-yellow-600 via-amber-500 to-orange-600 bg-clip-text text-transparent flex items-center gap-3">
-          <span className="text-3xl">🏆</span>
+    <section className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-4 md:p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* 헤더 */}
+      <div className="flex items-center justify-center mb-4">
+        <div className="text-lg md:text-xl font-bold bg-gradient-to-r from-yellow-600 via-amber-500 to-orange-600 bg-clip-text text-transparent flex items-center gap-2">
+          <span className="text-2xl md:text-3xl">🏆</span>
           <span>포인트 랭킹 TOP 3</span>
         </div>
       </div>
 
-      <div className="flex items-end justify-center gap-4 px-4">
-        {/* 2등 (왼쪽) */}
-        {secondMember && (
-          <div className="flex flex-col items-center flex-1 max-w-[200px]">
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-              {second.map((member, idx) => (
-                <div
-                  key={member.id}
-                  className="flex flex-col items-center cursor-pointer group transition-all duration-300 hover:scale-105"
-                  onClick={() => onOpen(member.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") onOpen(member.id);
-                  }}
-                >
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-full border-4 border-slate-300 bg-gradient-to-br from-slate-100 to-slate-200 shadow-xl group-hover:shadow-2xl group-hover:border-slate-400 transition-all duration-300 overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
-                    </div>
-                    {idx === 0 && (
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white font-bold text-xs shadow-lg border-2 border-white">
-                        2
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs font-bold text-slate-700 mt-1 truncate max-w-[60px]">
-                    {member.name}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="w-full h-32 rounded-t-2xl bg-gradient-to-b from-slate-300 to-slate-400 border-4 border-slate-400 shadow-lg flex flex-col items-center justify-end pb-3 mb-2">
-              <div className="text-white font-bold text-xs mb-1 px-2 text-center leading-tight">
-                {second.map((m, i) => (
-                  <span key={m.id}>
-                    {m.name}
-                    {i < second.length - 1 && ", "}
-                  </span>
-                ))}
-              </div>
-              <div className="text-white font-bold text-sm">
-                {(secondMember.totalPoints ?? 0).toLocaleString()}P
-              </div>
-            </div>
-            <div className="text-xs font-bold text-slate-600 mt-1">
-              {(secondMember.totalPoints ?? 0).toLocaleString()}점
-            </div>
-          </div>
-        )}
-
-        {/* 1등 (가운데, 가장 높음) */}
+      {/* 컴팩트 메달 카드 */}
+      <div className="space-y-2 md:space-y-3">
+        {/* 1등 */}
         {firstMember && (
-          <div className="flex flex-col items-center flex-1 max-w-[250px]">
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-              {first.map((member, idx) => (
-                <div
-                  key={member.id}
-                  className="flex flex-col items-center cursor-pointer group transition-all duration-300 hover:scale-105"
-                  onClick={() => onOpen(member.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") onOpen(member.id);
-                  }}
-                >
-                  <div className="relative">
-                    <div className={`rounded-full border-4 border-yellow-400 bg-gradient-to-br from-yellow-200 to-amber-200 shadow-2xl group-hover:shadow-[0_0_30px_rgba(251,191,36,0.6)] group-hover:border-yellow-300 transition-all duration-300 overflow-hidden relative ${first.length > 1 ? "w-20 h-20" : "w-32 h-32"}`}>
+          <div
+            className="flex items-center gap-3 md:gap-4 rounded-xl border-2 border-yellow-300/50 bg-gradient-to-r from-yellow-50 via-amber-50 to-orange-50 p-3 md:p-4 h-[90px] md:h-[100px] hover:shadow-lg hover:scale-[1.01] transition-all duration-200 cursor-pointer group"
+            onClick={() => onOpen(firstMember.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onOpen(firstMember.id);
+            }}
+          >
+            {/* 왼쪽: 메달 */}
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg border-2 border-yellow-300">
+                <span className="text-lg md:text-xl">🥇</span>
+              </div>
+            </div>
+
+            {/* 중앙: 이름 목록 */}
+            <div className="flex-1 min-w-0">
+              {first.length > 1 ? (
+                <>
+                  <div className="text-[10px] md:text-xs font-semibold text-yellow-700 mb-1">공동 1등 ({first.length}명)</div>
+                  <div className="text-sm md:text-base font-bold text-gray-800 truncate">
+                    {first.map((m, i) => (
+                      <span key={m.id}>
+                        {m.name}
+                        {i < first.length - 1 && <span className="text-gray-400 mx-1">·</span>}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm md:text-base font-bold text-gray-800">{firstMember.name}</div>
+              )}
+            </div>
+
+            {/* 프로필 이미지 */}
+            <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+              <div className="relative">
+                <div className="flex -space-x-1.5 md:-space-x-2">
+                  {first.slice(0, 3).map((member, idx) => (
+                    <div
+                      key={member.id}
+                      className="relative w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white shadow-md overflow-hidden bg-white group-hover:scale-110 transition-transform duration-200"
+                      style={{ zIndex: 3 - idx }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(member.id);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-yellow-300/20" />
                     </div>
-                    {idx === 0 && (
-                      <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white font-bold shadow-xl border-4 border-white animate-pulse ${first.length > 1 ? "w-12 h-12" : "w-16 h-16"}`}>
-                        <span className={first.length > 1 ? "text-xl" : "text-3xl"}>👑</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className={`font-bold text-slate-700 mt-1 truncate max-w-[70px] ${first.length > 1 ? "text-xs" : "text-sm"}`}>
-                    {member.name}
-                  </div>
+                  ))}
+                  {first.length > 3 && (
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white bg-gradient-to-br from-yellow-100 to-amber-100 flex items-center justify-center text-[10px] md:text-xs font-bold text-yellow-700 shadow-md">
+                      +{first.length - 3}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            <div className="w-full h-40 rounded-t-2xl bg-gradient-to-b from-yellow-400 via-amber-400 to-orange-400 border-4 border-yellow-500 shadow-2xl flex flex-col items-center justify-end pb-4 mb-2 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-t from-yellow-600/30 to-transparent" />
-              <div className="relative z-10 text-white font-bold text-xs mb-1 px-2 text-center leading-tight">
-                {first.map((m, i) => (
-                  <span key={m.id}>
-                    {m.name}
-                    {i < first.length - 1 && ", "}
-                  </span>
-                ))}
-              </div>
-              <div className="relative z-10 text-white font-bold text-lg">
-                {(firstMember.totalPoints ?? 0).toLocaleString()}P
               </div>
             </div>
-            <div className="text-sm font-bold text-yellow-700 mt-1">
-              {(firstMember.totalPoints ?? 0).toLocaleString()}점
+
+            {/* 오른쪽: 점수 */}
+            <div className="flex-shrink-0 text-right">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl md:text-2xl font-extrabold bg-gradient-to-r from-yellow-600 to-amber-600 bg-clip-text text-transparent">
+                  {(firstMember.totalPoints ?? 0).toLocaleString()}
+                </span>
+                <span className="text-xs md:text-sm font-bold text-yellow-600">P</span>
+              </div>
             </div>
           </div>
         )}
 
-        {/* 3등 (오른쪽) */}
+        {/* 2등 */}
+        {secondMember && (
+          <div
+            className="flex items-center gap-3 md:gap-4 rounded-xl border-2 border-slate-300/50 bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 p-3 md:p-4 h-[90px] md:h-[100px] hover:shadow-lg hover:scale-[1.01] transition-all duration-200 cursor-pointer group"
+            onClick={() => onOpen(secondMember.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onOpen(secondMember.id);
+            }}
+          >
+            {/* 왼쪽: 메달 */}
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center shadow-lg border-2 border-slate-300">
+                <span className="text-lg md:text-xl">🥈</span>
+              </div>
+            </div>
+
+            {/* 중앙: 이름 목록 */}
+            <div className="flex-1 min-w-0">
+              {second.length > 1 ? (
+                <>
+                  <div className="text-[10px] md:text-xs font-semibold text-slate-700 mb-1">공동 2등 ({second.length}명)</div>
+                  <div className="text-sm md:text-base font-bold text-gray-800 truncate">
+                    {second.map((m, i) => (
+                      <span key={m.id}>
+                        {m.name}
+                        {i < second.length - 1 && <span className="text-gray-400 mx-1">·</span>}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm md:text-base font-bold text-gray-800">{secondMember.name}</div>
+              )}
+            </div>
+
+            {/* 프로필 이미지 */}
+            <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+              <div className="relative">
+                <div className="flex -space-x-1.5 md:-space-x-2">
+                  {second.slice(0, 3).map((member, idx) => (
+                    <div
+                      key={member.id}
+                      className="relative w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white shadow-md overflow-hidden bg-white group-hover:scale-110 transition-transform duration-200"
+                      style={{ zIndex: 3 - idx }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(member.id);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                  {second.length > 3 && (
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white bg-gradient-to-br from-slate-100 to-gray-100 flex items-center justify-center text-[10px] md:text-xs font-bold text-slate-700 shadow-md">
+                      +{second.length - 3}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 오른쪽: 점수 */}
+            <div className="flex-shrink-0 text-right">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl md:text-2xl font-extrabold bg-gradient-to-r from-slate-600 to-gray-600 bg-clip-text text-transparent">
+                  {(secondMember.totalPoints ?? 0).toLocaleString()}
+                </span>
+                <span className="text-xs md:text-sm font-bold text-slate-600">P</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3등 */}
         {thirdMember && (
-          <div className="flex flex-col items-center flex-1 max-w-[200px]">
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-              {third.map((member, idx) => (
-                <div
-                  key={member.id}
-                  className="flex flex-col items-center cursor-pointer group transition-all duration-300 hover:scale-105"
-                  onClick={() => onOpen(member.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") onOpen(member.id);
-                  }}
-                >
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-full border-4 border-amber-600 bg-gradient-to-br from-amber-200 to-orange-200 shadow-xl group-hover:shadow-2xl group-hover:border-amber-500 transition-all duration-300 overflow-hidden">
+          <div
+            className="flex items-center gap-3 md:gap-4 rounded-xl border-2 border-amber-300/50 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 p-3 md:p-4 h-[90px] md:h-[100px] hover:shadow-lg hover:scale-[1.01] transition-all duration-200 cursor-pointer group"
+            onClick={() => onOpen(thirdMember.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onOpen(thirdMember.id);
+            }}
+          >
+            {/* 왼쪽: 메달 */}
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg border-2 border-amber-400">
+                <span className="text-lg md:text-xl">🥉</span>
+              </div>
+            </div>
+
+            {/* 중앙: 이름 목록 */}
+            <div className="flex-1 min-w-0">
+              {third.length > 1 ? (
+                <>
+                  <div className="text-[10px] md:text-xs font-semibold text-amber-700 mb-1">공동 3등 ({third.length}명)</div>
+                  <div className="text-sm md:text-base font-bold text-gray-800 truncate">
+                    {third.map((m, i) => (
+                      <span key={m.id}>
+                        {m.name}
+                        {i < third.length - 1 && <span className="text-gray-400 mx-1">·</span>}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm md:text-base font-bold text-gray-800">{thirdMember.name}</div>
+              )}
+            </div>
+
+            {/* 프로필 이미지 */}
+            <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+              <div className="relative">
+                <div className="flex -space-x-1.5 md:-space-x-2">
+                  {third.slice(0, 3).map((member, idx) => (
+                    <div
+                      key={member.id}
+                      className="relative w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white shadow-md overflow-hidden bg-white group-hover:scale-110 transition-transform duration-200"
+                      style={{ zIndex: 3 - idx }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(member.id);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
                     </div>
-                    {idx === 0 && (
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center text-white font-bold text-xs shadow-lg border-2 border-white">
-                        3
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs font-bold text-amber-700 mt-1 truncate max-w-[60px]">
-                    {member.name}
-                  </div>
+                  ))}
+                  {third.length > 3 && (
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-white bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-[10px] md:text-xs font-bold text-amber-700 shadow-md">
+                      +{third.length - 3}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            <div className="w-full h-28 rounded-t-2xl bg-gradient-to-b from-amber-500 to-orange-500 border-4 border-amber-600 shadow-lg flex flex-col items-center justify-end pb-3 mb-2">
-              <div className="text-white font-bold text-xs mb-1 px-2 text-center leading-tight">
-                {third.map((m, i) => (
-                  <span key={m.id}>
-                    {m.name}
-                    {i < third.length - 1 && ", "}
-                  </span>
-                ))}
-              </div>
-              <div className="text-white font-bold text-sm">
-                {(thirdMember.totalPoints ?? 0).toLocaleString()}P
               </div>
             </div>
-            <div className="text-xs font-bold text-amber-700 mt-1">
-              {(thirdMember.totalPoints ?? 0).toLocaleString()}점
+
+            {/* 오른쪽: 점수 */}
+            <div className="flex-shrink-0 text-right">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl md:text-2xl font-extrabold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                  {(thirdMember.totalPoints ?? 0).toLocaleString()}
+                </span>
+                <span className="text-xs md:text-sm font-bold text-amber-600">P</span>
+              </div>
             </div>
           </div>
         )}
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <div className="flex items-center justify-center gap-6 text-xs text-gray-600">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 shadow-md" />
-            <span className="font-semibold">1등</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 shadow-md" />
-            <span className="font-semibold">2등</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 shadow-md" />
-            <span className="font-semibold">3등</span>
-          </div>
-        </div>
       </div>
     </section>
   );
