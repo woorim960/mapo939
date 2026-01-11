@@ -27,6 +27,7 @@ export type PublicState = {
   hostPlayerId: string | null;
   players: PublicPlayer[];
   roomName: string | null;
+  roomCreatedAt?: number | null;
   roomDeleted?: boolean;
   round: {
     index: number;

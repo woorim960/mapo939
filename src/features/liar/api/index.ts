@@ -39,6 +39,11 @@ export async function leaveRoom(roomId: string, playerId: string): Promise<void>
   await apiPost("/api/liar/leave", { roomId, playerId });
 }
 
+// 시간 연장
+export async function extendGracePeriod(roomId: string, playerId: string): Promise<void> {
+  await apiPost("/api/liar/extend-grace-period", { roomId, playerId });
+}
+
 // 방 삭제
 export async function deleteRoom(roomId: string): Promise<void> {
   await apiDelete(`/api/liar/rooms/${roomId}`);

@@ -30,6 +30,7 @@ export type PublicState = {
   hostPlayerId: string | null;
   players: PublicPlayer[];
   roomName: string | null;
+  roomCreatedAt?: number | null;
   roomDeleted?: boolean;
   round: {
     index: number;
@@ -69,7 +70,7 @@ export function computeFinalChampions(state: GameState, scoreById: Record<string
   return ids.filter((id) => (scoreById[id] ?? 0) >= FINAL_SCORE);
 }
 
-export function toPublicState(state: GameState, scoreById: Record<string, number>, roomName?: string | null): PublicState {
+export function toPublicState(state: GameState, scoreById: Record<string, number>, roomName?: string | null, roomCreatedAt?: number | null): PublicState {
   const voteCounts = computeVoteCounts((state.round as any)?.votesByVoterId);
   const questionChangeCount = (state.round as any)?.questionChangeByPlayerId
     ? Object.keys((state.round as any).questionChangeByPlayerId).length
@@ -89,6 +90,7 @@ export function toPublicState(state: GameState, scoreById: Record<string, number
       score: scoreById[p.playerId] ?? 0,
     })),
     roomName: roomName ?? null,
+    roomCreatedAt: roomCreatedAt ?? null,
     roomDeleted: Boolean((state as any).roomDeleted),
     round: {
       index: (state.round as any)?.index ?? 0,

@@ -1,19 +1,49 @@
 // 참가 폼 컴포넌트
 
-import type { Phase } from "../types";
+import { useEffect, useState } from "react";
+import type { Phase, PublicState } from "../types";
 import { canJoinNow } from "../utils";
 
 type JoinFormProps = {
   nickname: string;
   joinErr: string;
   busy: boolean;
-  publicState: { phase: Phase } | null;
+  publicState: PublicState | null;
   onChangeNickname: (nick: string) => void;
   onJoin: () => void;
+  onExtendTime?: () => void;
 };
 
-export function JoinForm({ nickname, joinErr, busy, publicState, onChangeNickname, onJoin }: JoinFormProps) {
+export function JoinForm({ nickname, joinErr, busy, publicState, onChangeNickname, onJoin, onExtendTime }: JoinFormProps) {
   const canJoin = publicState ? canJoinNow(publicState.phase) : true;
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [isFirstVisitor, setIsFirstVisitor] = useState(false);
+
+  const GRACE_PERIOD_MS = 60 * 1000; // 1분
+
+  useEffect(() => {
+    if (!publicState?.roomCreatedAt) {
+      setRemainingSeconds(null);
+      setIsFirstVisitor(false);
+      return;
+    }
+
+    // 플레이어가 없으면 첫 방문자로 간주
+    const hasPlayers = publicState.players && publicState.players.length > 0;
+    setIsFirstVisitor(!hasPlayers && canJoin);
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const elapsed = now - publicState.roomCreatedAt!;
+      const remaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
+      const seconds = Math.ceil(remaining / 1000);
+      setRemainingSeconds(seconds);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 100);
+    return () => clearInterval(interval);
+  }, [publicState?.roomCreatedAt, publicState?.players, canJoin]);
 
   return (
     <section className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -22,6 +52,40 @@ export function JoinForm({ nickname, joinErr, busy, publicState, onChangeNicknam
         <span>게임 참가</span>
       </div>
       
+      {/* 첫 방문자 타이머 알림 */}
+      {isFirstVisitor && remainingSeconds !== null && remainingSeconds > 0 && (
+        <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 shadow-lg animate-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">⏰</span>
+              <div>
+                <div className="text-sm font-bold text-orange-800">방 생성 후 1분 내 참가 필요</div>
+                <div className="text-xs text-orange-700">시간이 지나면 자동으로 방에서 나가집니다</div>
+              </div>
+            </div>
+            {onExtendTime && (
+              <button
+                onClick={onExtendTime}
+                className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 transition-colors shadow-md"
+              >
+                +1분 연장
+              </button>
+            )}
+          </div>
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg font-bold text-orange-700">{remainingSeconds}초</span>
+              <div className="flex-1 h-2 bg-orange-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-100"
+                  style={{ width: `${(remainingSeconds / 60) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4">
         <label className="block text-sm font-semibold text-gray-700 mb-2">닉네임 입력</label>
         <input

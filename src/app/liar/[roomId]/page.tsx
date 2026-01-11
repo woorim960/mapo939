@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiarGame } from "@/features/liar/hooks/useLiarGame";
 import { useVoting } from "@/features/liar/hooks/useVoting";
@@ -25,7 +25,7 @@ import { Toast } from "@/shared/components/Toast";
 import { phaseLabel, roleLabel, canJoinNow, defaultRoleCounts, getPhaseTheme } from "@/features/liar/utils";
 import { remainingMs } from "@/shared/utils/date";
 import { setLS, removeLS } from "@/shared/utils/storage";
-import { updateRoomName, leaveRoom } from "@/features/liar/api";
+import { updateRoomName, leaveRoom, extendGracePeriod } from "@/features/liar/api";
 import type { Phase } from "@/features/liar/types";
 
 export default function LiarPage() {
@@ -278,7 +278,7 @@ export default function LiarPage() {
   }
 
   // 방 나가기
-  async function handleLeaveRoom() {
+  const handleLeaveRoom = useCallback(async () => {
     if (!game.playerId) return;
     try {
       await leaveRoom(roomId, game.playerId);
@@ -289,7 +289,46 @@ export default function LiarPage() {
     } catch (err) {
       actions.setToast("방 나가기에 실패했습니다.");
     }
+  }, [roomId, game.playerId, router, actions]);
+
+  // 시간 연장
+  async function handleExtendTime() {
+    if (!game.playerId) return;
+    try {
+      await extendGracePeriod(roomId, game.playerId);
+      actions.setToast("시간이 1분 연장되었습니다.");
+      // 상태 새로고침
+      await actions.refreshGameState?.();
+    } catch (err) {
+      actions.setToast("시간 연장에 실패했습니다.");
+    }
   }
+
+  // 자동 내보내기 (1분 지나면)
+  useEffect(() => {
+    if (!game.publicState?.roomCreatedAt || game.joined) return;
+
+    const GRACE_PERIOD_MS = 60 * 1000; // 1분
+    const checkAndLeave = () => {
+      if (game.joined) return; // 이미 참가했으면 취소
+      
+      const now = Date.now();
+      const elapsed = now - game.publicState!.roomCreatedAt!;
+      const remaining = GRACE_PERIOD_MS - elapsed;
+
+      if (remaining <= 0) {
+        // 시간이 지났으면 내보내기
+        actions.setToast("방 생성 후 1분이 지나 자동으로 방에서 나갑니다.");
+        handleLeaveRoom();
+        return;
+      }
+
+      // 남은 시간 후에 다시 확인
+      setTimeout(checkAndLeave, Math.min(remaining, 1000));
+    };
+
+    checkAndLeave();
+  }, [game.publicState?.roomCreatedAt, game.joined, actions, handleLeaveRoom]);
 
   const questionText = game.me?.question ?? null;
   const phaseTheme = getPhaseTheme(phase);
@@ -342,6 +381,7 @@ export default function LiarPage() {
               publicState={game.publicState}
               onChangeNickname={game.setNickname}
               onJoin={handleJoin}
+              onExtendTime={handleExtendTime}
             />
           )}
 

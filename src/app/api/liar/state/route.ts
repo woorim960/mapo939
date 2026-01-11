@@ -25,7 +25,7 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion, roomName } = await getOrCreateGame(roomId);
+    const { state, dbVersion, roomName, roomCreatedAt } = await getOrCreateGame(roomId);
     const ids = (state.players ?? []).map(p => p.playerId);
 
     // 점수는 매번 DB에서 (방별로)
@@ -48,7 +48,7 @@ export async function GET(req: Request): Promise<Response> {
         if (!r.ok) continue;
 
         // 예약 박은 상태 반환
-        return NextResponse.json(toPublicState(nextSetTimer, scoreMap, roomName));
+        return NextResponse.json(toPublicState(nextSetTimer, scoreMap, roomName, roomCreatedAt));
       }
 
       // 2) 예약 시간이 지났고, 최종 우승자가 있다면 → 점수 0 + 새 게임으로 리셋
@@ -70,11 +70,11 @@ export async function GET(req: Request): Promise<Response> {
         if (!r.ok) continue;
 
         const scoreMapAfter = await buildScoreMap(ids, roomId);
-        return NextResponse.json(toPublicState(next, scoreMapAfter, roomName));
+        return NextResponse.json(toPublicState(next, scoreMapAfter, roomName, roomCreatedAt));
       }
 
       // 아직 시간 전이면 그냥 GAME_OVER 상태 반환(프론트가 축하 UI 띄움)
-      return NextResponse.json(toPublicState(state, scoreMap, roomName));
+      return NextResponse.json(toPublicState(state, scoreMap, roomName, roomCreatedAt));
     }
 
     // ✅ 버전이 변하지 않았고 + 자동 전환 조건도 아니면 204
@@ -91,16 +91,16 @@ export async function GET(req: Request): Promise<Response> {
       if (!res.ok) continue;
 
       const scoreMap2 = await buildScoreMap((next.players ?? []).map(p => p.playerId), roomId);
-      return NextResponse.json(toPublicState(next, scoreMap2, roomName));
+      return NextResponse.json(toPublicState(next, scoreMap2, roomName, roomCreatedAt));
     }
 
     // ✅ 그 외엔 현재 state 그대로 반환
-    return NextResponse.json(toPublicState(state, scoreMap, roomName));
+    return NextResponse.json(toPublicState(state, scoreMap, roomName, roomCreatedAt));
   }
 
   // CAS 충돌 fallback
-  const { state, roomName } = await getOrCreateGame(roomId);
+  const { state, roomName, roomCreatedAt } = await getOrCreateGame(roomId);
   const ids = (state.players ?? []).map(p => p.playerId);
   const scoreMap = await buildScoreMap(ids, roomId);
-  return NextResponse.json(toPublicState(state, scoreMap, roomName));
+  return NextResponse.json(toPublicState(state, scoreMap, roomName, roomCreatedAt));
 }
