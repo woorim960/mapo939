@@ -48,6 +48,7 @@ export type GameState = {
 
   lastEliminatedPlayerId: string | null;
   lastEliminatedWasTroll: boolean;
+  lastEliminatedRole?: Role | null;
   winnerPlayerIds?: string[];
   trollDeathRewarded?: boolean;
 

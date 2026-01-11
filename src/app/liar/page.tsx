@@ -195,7 +195,7 @@ export default function LiarPage() {
   const questionText = game.me?.question ?? null;
   const phaseTheme = getPhaseTheme(phase);
 
-  const canShowGoVoteButton = game.joined && isHost && (phase === "REVEAL" || phase === "DISCUSS" || phase === "TIE_DISCUSS" || phase === "VOTING");
+  const canShowGoVoteButton = game.joined && isHost && (phase === "REVEAL" || phase === "DISCUSS" || phase === "TIE_DISCUSS" || phase === "VOTING" || phase === "RESULT");
   const showVotePanel = game.joined && phase === "VOTING";
 
   return (
@@ -342,6 +342,7 @@ export default function LiarPage() {
             <ResultPanel
               eliminatedName={eliminatedName}
               lastEliminatedWasTroll={game.publicState.lastEliminatedWasTroll}
+              lastEliminatedRole={game.publicState.lastEliminatedRole ?? null}
               joined={game.joined}
               isAliveMe={isAliveMe}
               busy={actions.busy}

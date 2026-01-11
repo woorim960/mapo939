@@ -43,6 +43,7 @@ export type PublicState = {
   };
   lastEliminatedPlayerId: string | null;
   lastEliminatedWasTroll: boolean;
+  lastEliminatedRole: "AUDIENCE" | "LIAR" | "TROLL" | null;
   championPlayerId: string | null;
   winnerPlayerIds: string[];
   finalChampionPlayerIds: string[];
@@ -99,6 +100,7 @@ export function toPublicState(state: GameState, scoreById: Record<string, number
     },
     lastEliminatedPlayerId: (state as any).lastEliminatedPlayerId ?? null,
     lastEliminatedWasTroll: Boolean((state as any).lastEliminatedWasTroll),
+    lastEliminatedRole: ((state as any).lastEliminatedRole ?? null) as "AUDIENCE" | "LIAR" | "TROLL" | null,
     championPlayerId: (state as any).championPlayerId ?? null,
     winnerPlayerIds: (state as any).winnerPlayerIds ?? [],
     finalChampionPlayerIds,

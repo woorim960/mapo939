@@ -162,6 +162,7 @@ export async function POST(req: Request): Promise<Response> {
           players: nextPlayers,
           lastEliminatedPlayerId: eliminatedId,
           lastEliminatedWasTroll,
+          lastEliminatedRole: eliminatedRole,
           championPlayerId: finalChampions[0] ?? null,
           winnerPlayerIds: finalChampions,
           finalChampionPlayerIds: finalChampions,
@@ -189,12 +190,46 @@ export async function POST(req: Request): Promise<Response> {
         });
       }
 
-      // ✅ 300점 달성자가 없으면 RESULT에서 멈춤 (방장이 '이번판 초기화' 필요)
+      // ✅ 300점 달성자가 없으면 게임 계속 진행 여부 확인
+      const aliveCount = nextPlayers.filter(p => p.isAlive).length;
+      
+      // ✅ 생존자가 3명 이상이면 다음 라운드로 자동 진행 (PREP phase)
+      if (aliveCount >= 3) {
+        const nextPrep: GameState = {
+          ...state,
+          players: nextPlayers,
+          lastEliminatedPlayerId: eliminatedId,
+          lastEliminatedWasTroll,
+          lastEliminatedRole: eliminatedRole,
+          version: (state.version ?? 0) + 1,
+          phase: "PREP",
+          round: {
+            ...round,
+            trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
+          },
+        };
+
+        const r = await updateGameCAS(dbVersion, nextPrep);
+        if (!r.ok) continue;
+
+        return NextResponse.json({
+          ok: true,
+          eliminatedId,
+          movedTo: "PREP",
+          aliveAudience,
+          aliveLiar,
+          aliveTroll,
+          trollDeathBonusApplied: shouldPayTrollDeathBonus,
+        });
+      }
+
+      // ✅ 생존자가 3명 미만이면 RESULT에서 멈춤 (방장이 '이번판 초기화' 필요)
       const nextStayResult: GameState = {
         ...state,
         players: nextPlayers,
         lastEliminatedPlayerId: eliminatedId,
         lastEliminatedWasTroll,
+        lastEliminatedRole: eliminatedRole,
         version: (state.version ?? 0) + 1,
         phase: "RESULT",
         round: {
@@ -275,6 +310,7 @@ export async function POST(req: Request): Promise<Response> {
       players: nextPlayers,
       lastEliminatedPlayerId: eliminatedId,
       lastEliminatedWasTroll,
+      lastEliminatedRole: eliminatedRole,
       championPlayerId,
       winnerPlayerIds: winners,
       finalChampionPlayerIds: finalChampionsAfter,

@@ -19,7 +19,7 @@ export function GoToVotingButton({
   myVotedTargetId,
   onGoToVoting,
 }: GoToVotingButtonProps) {
-  const canShow = joined && isHost && (phase === "REVEAL" || phase === "DISCUSS" || phase === "TIE_DISCUSS" || phase === "VOTING");
+  const canShow = joined && isHost && (phase === "REVEAL" || phase === "DISCUSS" || phase === "TIE_DISCUSS" || phase === "VOTING" || phase === "RESULT");
   const isVoted = !!myVotedTargetId;
   const isDisabled = busy || goVoteClicked || isVoted;
 

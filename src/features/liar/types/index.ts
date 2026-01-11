@@ -40,6 +40,7 @@ export type PublicState = {
   };
   lastEliminatedPlayerId: string | null;
   lastEliminatedWasTroll: boolean;
+  lastEliminatedRole: "AUDIENCE" | "LIAR" | "TROLL" | null;
   championPlayerId: string | null;
   winnerPlayerIds?: string[];
   finalChampionPlayerIds?: string[];

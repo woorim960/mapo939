@@ -3,6 +3,7 @@
 type ResultPanelProps = {
   eliminatedName: string | null;
   lastEliminatedWasTroll: boolean;
+  lastEliminatedRole: "AUDIENCE" | "LIAR" | "TROLL" | null;
   joined: boolean;
   isAliveMe: boolean;
   busy: boolean;
@@ -12,6 +13,7 @@ type ResultPanelProps = {
 export function ResultPanel({
   eliminatedName,
   lastEliminatedWasTroll,
+  lastEliminatedRole,
   joined,
   isAliveMe,
   busy,
@@ -42,14 +44,20 @@ export function ResultPanel({
             <div className="text-xl font-bold text-gray-800">
               {eliminatedName ?? "미정"}
             </div>
-            {eliminatedName && (
+            {eliminatedName && lastEliminatedRole && (
               <div className={[
                 "mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
-                lastEliminatedWasTroll
+                lastEliminatedRole === "TROLL"
                   ? "bg-orange-200 text-orange-800"
-                  : "bg-gray-200 text-gray-700",
+                  : lastEliminatedRole === "LIAR"
+                  ? "bg-red-200 text-red-800"
+                  : "bg-blue-200 text-blue-800",
               ].join(" ")}>
-                {lastEliminatedWasTroll ? "🎭 트롤" : "👥 관객/라이어"}
+                {lastEliminatedRole === "TROLL" 
+                  ? "🎭 트롤" 
+                  : lastEliminatedRole === "LIAR"
+                  ? "🕵️ 라이어"
+                  : "👥 관객"}
               </div>
             )}
           </div>
