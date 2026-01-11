@@ -304,31 +304,60 @@ export default function LiarPage() {
     }
   }
 
-  // 자동 내보내기 (1분 지나면)
+  // 자동 내보내기 (1분 지나면) - 현재 방에만 적용
   useEffect(() => {
-    if (!game.publicState?.roomCreatedAt || game.joined) return;
+    // roomId가 없거나 참가했으면 타이머 시작하지 않음
+    if (!roomId || game.joined) return;
+    
+    // roomCreatedAt이 없으면 타이머 시작하지 않음
+    if (!game.publicState?.roomCreatedAt) return;
 
     const GRACE_PERIOD_MS = 60 * 1000; // 1분
+    const currentRoomId = roomId; // 현재 roomId 캡처
+    const currentRoomCreatedAt = game.publicState.roomCreatedAt; // 현재 방 생성 시간 캡처
+    let timeoutId: number | null = null;
+    let cancelled = false;
+
     const checkAndLeave = () => {
-      if (game.joined) return; // 이미 참가했으면 취소
+      // roomId가 변경되었거나 참가했거나 취소되었으면 중단
+      if (cancelled || roomId !== currentRoomId || game.joined) {
+        return;
+      }
+      
+      // roomCreatedAt이 변경되었으면 중단 (다른 방으로 이동했을 수 있음)
+      if (!game.publicState?.roomCreatedAt || game.publicState.roomCreatedAt !== currentRoomCreatedAt) {
+        return;
+      }
       
       const now = Date.now();
-      const elapsed = now - game.publicState!.roomCreatedAt!;
+      const elapsed = now - currentRoomCreatedAt;
       const remaining = GRACE_PERIOD_MS - elapsed;
 
       if (remaining <= 0) {
-        // 시간이 지났으면 내보내기
-        actions.setToast("방 생성 후 1분이 지나 자동으로 방에서 나갑니다.");
-        handleLeaveRoom();
+        // 시간이 지났고, 여전히 같은 방이고 참가하지 않았으면 내보내기
+        if (!cancelled && roomId === currentRoomId && !game.joined && game.publicState?.roomCreatedAt === currentRoomCreatedAt) {
+          actions.setToast("방 생성 후 1분이 지나 자동으로 방에서 나갑니다.");
+          handleLeaveRoom();
+        }
         return;
       }
 
       // 남은 시간 후에 다시 확인
-      setTimeout(checkAndLeave, Math.min(remaining, 1000));
+      timeoutId = window.setTimeout(checkAndLeave, Math.min(remaining, 1000));
     };
 
+    // 즉시 체크 시작
     checkAndLeave();
-  }, [game.publicState?.roomCreatedAt, game.joined, actions, handleLeaveRoom]);
+
+    // cleanup: roomId나 roomCreatedAt이 변경되거나 컴포넌트가 unmount될 때 타이머 취소
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+  }, [roomId, game.publicState?.roomCreatedAt, game.joined, actions, handleLeaveRoom]);
 
   const questionText = game.me?.question ?? null;
   const phaseTheme = getPhaseTheme(phase);
