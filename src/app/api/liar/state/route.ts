@@ -25,19 +25,11 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame(roomId);
+    const { state, dbVersion, roomName } = await getOrCreateGame(roomId);
     const ids = (state.players ?? []).map(p => p.playerId);
 
     // 점수는 매번 DB에서 (방별로)
     const scoreMap = await buildScoreMap(ids, roomId);
-    
-    // 방 이름 가져오기
-    const p = prisma();
-    const game = await p.liarGame.findUnique({
-      where: { id: roomId },
-      select: { name: true },
-    });
-    const roomName = game?.name ?? null;
 
     // ✅ GAME_OVER 자동 리셋 처리
     if (state.phase === "GAME_OVER") {
@@ -107,14 +99,8 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   // CAS 충돌 fallback
-  const { state } = await getOrCreateGame(roomId);
+  const { state, roomName } = await getOrCreateGame(roomId);
   const ids = (state.players ?? []).map(p => p.playerId);
   const scoreMap = await buildScoreMap(ids, roomId);
-  const p = prisma();
-  const game = await p.liarGame.findUnique({
-    where: { id: roomId },
-    select: { name: true },
-  });
-  const roomName = game?.name ?? null;
   return NextResponse.json(toPublicState(state, scoreMap, roomName));
 }

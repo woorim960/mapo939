@@ -24,16 +24,38 @@ export async function POST(req: Request): Promise<Response> {
       ? nameInput.trim() 
       : undefined;
 
-    console.log("Creating room with name:", name);
+    console.log("[POST /api/liar/rooms] Creating room with name:", name);
     const roomId = await createRoom(name);
     
-    // 저장된 방 이름을 다시 조회하여 반환
-    const createdRoom = await prisma().liarGame.findUnique({
+    // 저장된 방 이름을 다시 조회하여 반환 (트랜잭션 커밋 대기)
+    let createdRoom = await prisma().liarGame.findUnique({
       where: { id: roomId },
       select: { name: true },
     });
     
-    console.log("Room created, stored name:", createdRoom?.name);
+    // 방을 찾지 못했을 때 재시도
+    if (!createdRoom) {
+      for (let retry = 0; retry < 5; retry += 1) {
+        await new Promise(resolve => setTimeout(resolve, 100 * (retry + 1)));
+        createdRoom = await prisma().liarGame.findUnique({
+          where: { id: roomId },
+          select: { name: true },
+        });
+        if (createdRoom) break;
+      }
+    }
+    
+    console.log("[POST /api/liar/rooms] Room created, stored name:", createdRoom?.name, "expected:", name);
+    
+    // 저장된 이름이 예상과 다른 경우 경고
+    if (name && createdRoom?.name !== name) {
+      console.error("[POST /api/liar/rooms] WARNING: Room name mismatch!", { 
+        roomId, 
+        expected: name, 
+        actual: createdRoom?.name 
+      });
+    }
+    
     return NextResponse.json({ roomId, name: createdRoom?.name ?? null });
   } catch (err) {
     console.error("Failed to create room:", err);

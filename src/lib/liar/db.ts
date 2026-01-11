@@ -64,54 +64,87 @@ function createInitialGameState(): GameState {
   };
 }
 
-export async function getOrCreateGame(roomId: string): Promise<{ state: GameState; dbVersion: number }> {
+export async function getOrCreateGame(roomId: string): Promise<{ state: GameState; dbVersion: number; roomName: string | null }> {
   const p = prisma();
 
-  // 먼저 방을 찾기 시도
-  let row = await p.liarGame.findUnique({ where: { id: roomId } });
+  // 먼저 방을 찾기 시도 (최대 3번 재시도)
+  let row = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true } });
   
   // 방을 찾지 못했을 때, 짧은 대기 후 다시 시도 (트랜잭션 커밋 대기)
   if (!row) {
-    await new Promise(resolve => setTimeout(resolve, 50));
-    row = await p.liarGame.findUnique({ where: { id: roomId } });
+    for (let retry = 0; retry < 3; retry += 1) {
+      await new Promise(resolve => setTimeout(resolve, 100 * (retry + 1))); // 100ms, 200ms, 300ms
+      row = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true } });
+      if (row) break;
+    }
   }
   
   if (row) {
     const state = row.stateJson as unknown as GameState;
-    return { state: { ...state, version: row.version }, dbVersion: row.version };
+    return { 
+      state: { ...state, version: row.version }, 
+      dbVersion: row.version,
+      roomName: row.name ?? null
+    };
   }
 
-  // 방이 정말 없을 때만 새로 생성
+  // 방이 정말 없을 때만 새로 생성 (하지만 이는 매우 드문 경우)
+  // 실제로는 방이 이미 존재해야 하므로, 한 번 더 확인
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const finalCheck = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true } });
+  if (finalCheck) {
+    const state = finalCheck.stateJson as unknown as GameState;
+    return { 
+      state: { ...state, version: finalCheck.version }, 
+      dbVersion: finalCheck.version,
+      roomName: finalCheck.name ?? null
+    };
+  }
+
+  // 정말 방이 없을 때만 새로 생성 (이 경우는 거의 발생하지 않아야 함)
+  // ⚠️ 주의: 이 경우 name을 null로 생성하지만, 실제로는 방이 이미 존재해야 함
+  // 방이 이미 존재하는데 찾지 못한 경우이므로, 다시 한 번 확인
+  console.warn("[getOrCreateGame] Room not found, attempting to create (this should be rare):", roomId);
+  
   const initial = createInitialGameState();
 
   try {
     await p.liarGame.create({
       data: { 
         id: roomId, 
-        name: null,
+        name: null, // ⚠️ 새로 생성하는 경우이므로 name은 null
         version: 0, 
         stateJson: initial as unknown as object 
       },
     });
+    console.warn("[getOrCreateGame] Created new room with null name (this should not happen if room already exists):", roomId);
   } catch (err) {
     // 생성 실패 시 다시 조회 (다른 요청에서 이미 생성했을 수 있음)
-    const again = await p.liarGame.findUnique({ where: { id: roomId } });
+    const again = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true } });
     if (!again) {
-      console.error("Failed to create or load LiarGame:", err);
+      console.error("[getOrCreateGame] Failed to create or load LiarGame:", err);
       throw new Error("Failed to create or load LiarGame");
     }
     const state = again.stateJson as unknown as GameState;
-    return { state: { ...state, version: again.version }, dbVersion: again.version };
+    return { 
+      state: { ...state, version: again.version }, 
+      dbVersion: again.version,
+      roomName: again.name ?? null
+    };
   }
 
   // 생성 후 실제 저장된 데이터 반환 (트랜잭션 일관성 보장)
-  const created = await p.liarGame.findUnique({ where: { id: roomId } });
+  const created = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true } });
   if (created) {
     const state = created.stateJson as unknown as GameState;
-    return { state: { ...state, version: created.version }, dbVersion: created.version };
+    return { 
+      state: { ...state, version: created.version }, 
+      dbVersion: created.version,
+      roomName: created.name ?? null
+    };
   }
 
-  return { state: initial, dbVersion: 0 };
+  return { state: initial, dbVersion: 0, roomName: null };
 }
 
 export async function getGame(roomId: string): Promise<{ state: GameState; dbVersion: number } | null> {
@@ -133,6 +166,8 @@ export async function createRoom(name?: string): Promise<string> {
     ? name.trim() 
     : null;
 
+  console.log("[createRoom] Input:", { name, roomName, roomId });
+
   try {
     const created = await p.liarGame.create({
       data: {
@@ -142,20 +177,73 @@ export async function createRoom(name?: string): Promise<string> {
         stateJson: initial as unknown as object,
       },
     });
-    console.log("Room created:", { id: created.id, name: created.name });
+    console.log("[createRoom] Room created:", { id: created.id, name: created.name, expected: roomName });
+    
+    // 생성된 방이 실제로 저장되었는지 확인
+    let verified = false;
+    for (let retry = 0; retry < 3; retry += 1) {
+      await new Promise(resolve => setTimeout(resolve, 50 * (retry + 1)));
+      const verifiedRoom = await p.liarGame.findUnique({
+        where: { id: roomId },
+        select: { id: true, name: true },
+      });
+      if (verifiedRoom) {
+        verified = true;
+        console.log("Room verified:", { id: verifiedRoom.id, name: verifiedRoom.name });
+        // 저장된 이름이 예상과 다른 경우 경고
+        if (roomName && verifiedRoom.name !== roomName) {
+          console.warn("Room name mismatch:", { expected: roomName, actual: verifiedRoom.name });
+        }
+        break;
+      }
+    }
+    
+    if (!verified) {
+      console.warn("Room creation verification failed, but continuing...");
+    }
     
     // 방 이름이 설정된 경우 게임 상태 버전을 증가시켜서 클라이언트가 즉시 반영하도록 함
     if (roomName) {
       try {
-        const { state, dbVersion } = await getOrCreateGame(roomId);
-        const nextState = {
-          ...state,
-          version: (state.version ?? 0) + 1,
-        };
-        await updateGameCAS(roomId, dbVersion, nextState);
+        // 트랜잭션 커밋을 기다린 후 방을 조회
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        // 직접 방을 조회하여 버전 증가 (getOrCreateGame 사용하지 않음 - name을 null로 덮어쓰지 않도록)
+        let existing = await p.liarGame.findUnique({
+          where: { id: roomId },
+          select: { version: true, stateJson: true, name: true },
+        });
+        
+        // 방을 찾지 못했을 때 재시도
+        if (!existing) {
+          for (let retry = 0; retry < 3; retry += 1) {
+            await new Promise(resolve => setTimeout(resolve, 100 * (retry + 1)));
+            existing = await p.liarGame.findUnique({
+              where: { id: roomId },
+              select: { version: true, stateJson: true, name: true },
+            });
+            if (existing) break;
+          }
+        }
+        
+        if (existing) {
+          // name이 null이면 경고 (이건 발생하지 않아야 함)
+          if (!existing.name && roomName) {
+            console.error("[createRoom] WARNING: Room name is null after creation!", { roomId, expected: roomName });
+          }
+          
+          const state = existing.stateJson as unknown as GameState;
+          const nextState = {
+            ...state,
+            version: (existing.version ?? 0) + 1,
+          };
+          await updateGameCAS(roomId, existing.version, nextState);
+        } else {
+          console.error("[createRoom] Failed to find room after creation:", roomId);
+        }
       } catch (err) {
         // 버전 증가 실패는 무시 (다음 polling에서 반영됨)
-        console.error("Failed to increment version after room creation:", err);
+        console.error("[createRoom] Failed to increment version after room creation:", err);
       }
     }
     
