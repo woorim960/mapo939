@@ -1,6 +1,6 @@
 // 게임 액션 관리 훅
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   joinGame,
   startGame,
@@ -46,6 +46,8 @@ export function useGameActions({
 }: UseGameActionsProps) {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const toastTimeoutRef = useRef<number | null>(null);
+  const lastFinalizeToastRef = useRef<number>(0); // 마지막 "확인" 토스트 표시 시간
 
   function clearVersionCache() {
     removeLS("liar_version");
@@ -183,7 +185,28 @@ export function useGameActions({
     setBusy(true);
     try {
       await finalizeResult(playerId, roomId);
+      
+      // 중복 토스트 방지: 최근 5초 이내에 "확인" 토스트가 표시되었으면 다시 표시하지 않음
+      const now = Date.now();
+      if (now - lastFinalizeToastRef.current < 5000) {
+        await refreshGameState();
+        return true;
+      }
+      
+      // 이전 토스트 타이머가 있으면 취소
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      
+      lastFinalizeToastRef.current = now;
       setToast("확인");
+      
+      // 3초 후 토스트 자동 제거
+      toastTimeoutRef.current = window.setTimeout(() => {
+        setToast("");
+        toastTimeoutRef.current = null;
+      }, 3000);
+      
       await refreshGameState();
       return true;
     } catch (err) {

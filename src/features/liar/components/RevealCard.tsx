@@ -55,13 +55,10 @@ export function RevealCard({ players, answers }: RevealCardProps) {
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-bold text-sm shadow-md">
-                    {answer !== undefined ? answer : "?"}
-                  </div>
                   <div className="font-semibold text-base text-gray-800">{p.nickname}</div>
                 </div>
                 <div className="text-2xl font-bold text-amber-600">
-                  {isRevealed ? (answer ?? "❌") : "🔒"}
+                  {isRevealed ? (answer !== undefined ? answer : "❌") : "🔒"}
                 </div>
               </div>
             );

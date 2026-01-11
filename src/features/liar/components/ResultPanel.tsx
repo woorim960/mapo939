@@ -42,7 +42,7 @@ export function ResultPanel({
             {lastEliminatedWasTroll ? "🤡" : "💀"}
           </div>
           <div className="flex-1">
-            <div className="text-xs text-gray-600 mb-1">탈락자</div>
+            <div className="text-xs text-gray-600 mb-1">사망자</div>
             {tiedPlayerNames ? (
               <div>
                 <div className="text-xl font-bold text-gray-800 mb-2">동점</div>

@@ -22,7 +22,7 @@ export function phaseLabel(phase: Phase): string {
     case "VOTING":
       return "투표";
     case "TIE_DISCUSS":
-      return "동점 재논의";
+      return "재논의";
     case "RESULT":
       return "결과";
     case "GAME_OVER":
@@ -63,7 +63,7 @@ export function msgFromErrorCode(code?: string, message?: string): string {
     case "not_in_game":
       return "게임에 참가하지 않았습니다";
     case "not_alive":
-      return "이미 탈락하셨습니다";
+      return "이미 사망하셨습니다";
     case "not_voting":
       return "아직 투표 단계가 아닙니다";
     case "already_voted":
@@ -71,7 +71,7 @@ export function msgFromErrorCode(code?: string, message?: string): string {
     case "invalid_target":
       return "선택한 대상이 없습니다";
     case "target_not_alive":
-      return "선택한 대상이 이미 탈락했습니다";
+      return "선택한 대상이 이미 사망했습니다";
     case "cannot_vote_self":
       return "자신에게는 투표할 수 없습니다";
     case "not_result_phase":

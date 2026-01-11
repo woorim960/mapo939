@@ -53,7 +53,7 @@ export function DiscussPanel({
           <span className="text-xl">💀</span>
           <div className="flex-1">
             <div className="text-sm font-semibold text-red-800 mb-1">
-              {eliminatedName ? `${eliminatedName}님이 탈락했습니다` : "사망자가 발생했습니다"}
+              {eliminatedName ? `${eliminatedName}님이 사망했습니다` : "사망자가 발생했습니다"}
             </div>
             <div className="text-xs text-red-700">
               생존자들이 재논의 후 다시 투표로 진행합니다

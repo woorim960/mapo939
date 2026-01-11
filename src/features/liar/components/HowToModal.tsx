@@ -119,7 +119,7 @@ export function HowToModal({ open, onClose }: HowToModalProps) {
               <li className="pl-1">질문 공개</li>
               <li className="pl-1">답변 입력</li>
               <li className="pl-1">토론</li>
-              <li className="pl-1">투표 → 1명 탈락</li>
+              <li className="pl-1">투표 → 1명 사망</li>
             </ol>
             <div className="mt-3 p-2 rounded-lg bg-indigo-100/50 border border-indigo-200 text-xs text-indigo-700 font-medium">
               💡 동점이면 재논의 후 재투표

@@ -417,7 +417,14 @@ export default function LiarPage() {
       <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} />
 
       {/* 토스트는 fixed로 별도 처리 */}
-      {actions.toast && <Toast message={actions.toast} onClose={() => actions.setToast("")} />}
+      {actions.toast && (
+        <Toast 
+          message={actions.toast} 
+          onClose={() => actions.setToast("")}
+          duration={actions.toast === "확인" ? 3000 : 1000}
+          variant={actions.toast === "확인" ? "success" : "success"}
+        />
+      )}
 
       <div className="mx-auto max-w-md space-y-4">
 
