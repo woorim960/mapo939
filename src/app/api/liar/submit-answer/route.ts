@@ -4,7 +4,7 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string; value: number };
+type Body = { playerId: string; roomId: string; value: number };
 
 function isInt(n: unknown): n is number {
   return typeof n === "number" && Number.isInteger(n);
@@ -59,16 +59,19 @@ function maybeAdvanceToReveal(state: GameState): GameState {
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json()) as Body;
   const playerId = body.playerId?.trim();
+  const roomId = body.roomId?.trim();
   const value = body.value;
 
-  if (!playerId || !isInt(value)) {
+  if (!playerId || !roomId || !isInt(value)) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
   // DB에 플레이어 존재 확인(유령 playerId 방지)
   try {
     const p = prisma();
-    const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
+    const player = await p.liarPlayer.findUnique({
+      where: { id: playerId, gameId: roomId },
+    });
     if (!player) return NextResponse.json({ error: "unknown_player" }, { status: 404 });
   } catch {
     // prisma 이슈여도 게임 진행은 막아야 하므로 500
@@ -76,7 +79,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     const check = canSubmit(state, playerId);
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
@@ -91,7 +94,7 @@ export async function POST(req: Request): Promise<Response> {
     let next = applyAnswer(state, playerId, value);
     next = maybeAdvanceToReveal(next);
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) return NextResponse.json({ ok: true });
   }
 

@@ -4,7 +4,7 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string; targetPlayerId: string };
+type Body = { playerId: string; roomId: string; targetPlayerId: string };
 
 function isAlive(state: GameState, playerId: string): boolean {
   return Boolean(state.players?.find(p => p.playerId === playerId)?.isAlive);
@@ -28,14 +28,15 @@ function allAliveVoted(state: GameState, votesByVoterId: Record<string, string>)
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
   const playerId = body?.playerId?.trim();
+  const roomId = body?.roomId?.trim();
   const targetPlayerId = body?.targetPlayerId?.trim();
 
-  if (!playerId || !targetPlayerId) {
+  if (!playerId || !roomId || !targetPlayerId) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     // phase 체크
     if (state.phase !== "VOTING") {
@@ -74,9 +75,47 @@ export async function POST(req: Request): Promise<Response> {
     // ✅ 핵심: 전원 투표 완료면 RESULT로 phase 전환
     const shouldGoResult = allAliveVoted(state, nextVotes);
 
+    // 투표 결과 계산 (탈락자 결정)
+    let eliminatedId: string | null = null;
+    let lastEliminatedWasTroll = false;
+    let lastEliminatedRole: "AUDIENCE" | "LIAR" | "TROLL" | null = null;
+
+    if (shouldGoResult) {
+      // 투표 수 계산
+      const counts: Record<string, number> = {};
+      for (const voterId of Object.keys(nextVotes)) {
+        const targetId = nextVotes[voterId];
+        if (!targetId) continue;
+        counts[targetId] = (counts[targetId] ?? 0) + 1;
+      }
+
+      // 가장 많은 표를 받은 플레이어 찾기
+      const entries = Object.entries(counts);
+      if (entries.length > 0) {
+        entries.sort((a, b) => b[1] - a[1]);
+        const top = entries[0][1];
+        const topIds = entries.filter(([, c]) => c === top).map(([id]) => id);
+        
+        // 동점이 아니면 탈락자 결정
+        if (topIds.length === 1) {
+          eliminatedId = topIds[0];
+          
+          // 탈락자의 역할 확인
+          const round = state.round as any;
+          const rolesByPlayerId = (round?.rolesByPlayerId ?? {}) as Record<string, "AUDIENCE" | "LIAR" | "TROLL">;
+          const role = rolesByPlayerId[eliminatedId] ?? null;
+          lastEliminatedRole = role;
+          lastEliminatedWasTroll = role === "TROLL";
+        }
+      }
+    }
+
     const next: GameState = {
       ...state,
       phase: shouldGoResult ? "RESULT" : state.phase,
+      lastEliminatedPlayerId: shouldGoResult && eliminatedId ? eliminatedId : (state as any).lastEliminatedPlayerId ?? null,
+      lastEliminatedWasTroll: shouldGoResult && eliminatedId ? lastEliminatedWasTroll : Boolean((state as any).lastEliminatedWasTroll),
+      lastEliminatedRole: shouldGoResult && eliminatedId ? lastEliminatedRole : ((state as any).lastEliminatedRole ?? null),
       round: {
         ...state.round,
         votesByVoterId: nextVotes,
@@ -84,7 +123,7 @@ export async function POST(req: Request): Promise<Response> {
       version: (state.version ?? 0) + 1,
     };
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) {
       return NextResponse.json({ ok: true, phase: next.phase });
     }

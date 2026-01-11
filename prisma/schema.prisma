@@ -86,16 +86,30 @@ model BonusPoints {
 }
 
 model LiarGame {
-  id        Int      @id @default(1) // 단일 row 고정
+  id        String   @id @default(uuid())
+  name      String?
   version   Int      @default(0)
   stateJson Json
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  players LiarPlayer[]
+
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model LiarPlayer {
   id        String   @id // uuid
-  nickname  String   @unique
+  gameId    String
+  nickname  String
   score     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  game LiarGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, nickname])
+  @@index([gameId])
+  @@index([gameId, score])
 }

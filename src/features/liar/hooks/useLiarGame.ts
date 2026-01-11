@@ -7,7 +7,7 @@ import { uuid } from "@/shared/utils/uuid";
 import { setLS as setLSShared, removeLS as removeLSShared } from "@/shared/utils/storage";
 import type { PublicState, MeState } from "../types";
 
-export function useLiarGame() {
+export function useLiarGame(roomId: string) {
   const [playerId, setPlayerId] = useState<string>("");
   const [nickname, setNickname] = useState<string>("");
   const [joined, setJoined] = useState<boolean>(false);
@@ -61,27 +61,29 @@ export function useLiarGame() {
     }
 
     // ✅ 닉네임 유무와 관계없이 즉시 게임 상태를 확인 (참가자 목록 표시를 위해)
-    (async () => {
-      try {
-        const state = await fetchGameState(0);
-        if (state) {
-          setPublicState(state);
-          setLSShared("liar_version", String(state.version));
-          publicVersionRef.current = state.version;
-          // 닉네임이 있을 때만 joined 상태 업데이트
-          if (savedNick) {
-            updateJoinedStateFromPublicState(state, pid, savedNick);
+    if (roomId) {
+      (async () => {
+        try {
+          const state = await fetchGameState(roomId, 0);
+          if (state) {
+            setPublicState(state);
+            setLSShared("liar_version", String(state.version));
+            publicVersionRef.current = state.version;
+            // 닉네임이 있을 때만 joined 상태 업데이트
+            if (savedNick) {
+              updateJoinedStateFromPublicState(state, pid, savedNick);
+            }
           }
+        } catch {
+          // 초기 로드 실패는 무시 (폴링에서 다시 시도)
         }
-      } catch {
-        // 초기 로드 실패는 무시 (폴링에서 다시 시도)
-      }
-    })();
-  }, []);
+      })();
+    }
+  }, [roomId]);
 
   // public state polling + players 확인
   useEffect(() => {
-    if (!playerId) return;
+    if (!playerId || !roomId) return;
 
     let timer: number | null = null;
     let stopped = false;
@@ -94,8 +96,14 @@ export function useLiarGame() {
       const currentV = Math.max(fromRef, fromLS);
 
       try {
-        const state = await fetchGameState(currentV);
+        const state = await fetchGameState(roomId, currentV);
         if (state) {
+          // roomDeleted 플래그가 있으면 처리
+          if (state.roomDeleted) {
+            setPublicState(state);
+            return; // roomDeleted 처리는 상위 컴포넌트에서
+          }
+          
           setPublicState(state);
           setLSShared("liar_version", String(state.version));
           publicVersionRef.current = state.version;
@@ -103,8 +111,39 @@ export function useLiarGame() {
           const savedNick = getLS("liar_nickname");
           updateJoinedStateFromPublicState(state, playerId, savedNick);
         }
-      } catch {
-        // ignore polling errors
+      } catch (err) {
+        // 방이 삭제된 경우 404 에러가 발생할 수 있음
+        if (err instanceof Error && (err.message.includes("404") || err.message.includes("room_not_found"))) {
+          // 방이 삭제되었음을 표시하기 위해 roomDeleted 플래그 설정
+          setPublicState((prev) => prev ? { ...prev, roomDeleted: true } : {
+            version: 0,
+            phase: "LOBBY",
+            hostPlayerId: null,
+            players: [],
+            roomName: null,
+            roomDeleted: true,
+            round: {
+              index: 0,
+              questionId: null,
+              min: 0,
+              max: 0,
+              answersByPlayerId: {},
+              voteCounts: {},
+              questionChangeCount: 0,
+              answeringEndsAt: null,
+              discussEndsAt: null,
+              tieDiscussEndsAt: null,
+            },
+            lastEliminatedPlayerId: null,
+            lastEliminatedWasTroll: false,
+            lastEliminatedRole: null,
+            championPlayerId: null,
+            winnerPlayerIds: [],
+            finalChampionPlayerIds: [],
+            autoRestartAt: null,
+          });
+        }
+        // ignore other polling errors
       }
 
       timer = window.setTimeout(loop, 1000);
@@ -116,7 +155,7 @@ export function useLiarGame() {
       stopped = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [playerId]);
+  }, [playerId, roomId]);
 
   // me polling (joined일 때만)
   useEffect(() => {
@@ -129,7 +168,7 @@ export function useLiarGame() {
       if (stopped) return;
 
       try {
-        const data = await fetchMe(playerId);
+        const data = await fetchMe(playerId, roomId);
         setMe(data);
       } catch {
         // ✅ fetchMe 실패 시 publicState 확인
@@ -156,7 +195,7 @@ export function useLiarGame() {
       stopped = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [joined, playerId, publicState]);
+  }, [joined, playerId, roomId, publicState]);
 
   useEffect(() => {
     if (publicState) {

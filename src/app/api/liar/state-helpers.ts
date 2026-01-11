@@ -29,6 +29,8 @@ export type PublicState = {
   phase: Phase;
   hostPlayerId: string | null;
   players: PublicPlayer[];
+  roomName: string | null;
+  roomDeleted?: boolean;
   round: {
     index: number;
     questionId: string | null;
@@ -67,7 +69,7 @@ export function computeFinalChampions(state: GameState, scoreById: Record<string
   return ids.filter((id) => (scoreById[id] ?? 0) >= FINAL_SCORE);
 }
 
-export function toPublicState(state: GameState, scoreById: Record<string, number>): PublicState {
+export function toPublicState(state: GameState, scoreById: Record<string, number>, roomName?: string | null): PublicState {
   const voteCounts = computeVoteCounts((state.round as any)?.votesByVoterId);
   const questionChangeCount = (state.round as any)?.questionChangeByPlayerId
     ? Object.keys((state.round as any).questionChangeByPlayerId).length
@@ -86,6 +88,8 @@ export function toPublicState(state: GameState, scoreById: Record<string, number
       isHost: Boolean((p as any).isHost),
       score: scoreById[p.playerId] ?? 0,
     })),
+    roomName: roomName ?? null,
+    roomDeleted: Boolean((state as any).roomDeleted),
     round: {
       index: (state.round as any)?.index ?? 0,
       questionId: (state.round as any)?.questionId ?? null,
@@ -185,12 +189,12 @@ export function restartStateKeepPlayersAndResetRound(state: GameState): GameStat
   };
 }
 
-export async function buildScoreMap(playerIds: string[]): Promise<Record<string, number>> {
+export async function buildScoreMap(playerIds: string[], roomId: string): Promise<Record<string, number>> {
   if (playerIds.length === 0) return {};
   const p = prisma();
 
   const rows = await p.liarPlayer.findMany({
-    where: { id: { in: playerIds } },
+    where: { id: { in: playerIds }, gameId: roomId },
     select: { id: true, score: true },
   });
 

@@ -7,6 +7,7 @@ import { ApiError } from "@/shared/utils/error";
 
 type AnswerBoxProps = {
   playerId: string;
+  roomId: string;
   min: number;
   max: number;
   submittedCount: number;
@@ -19,6 +20,7 @@ type AnswerBoxProps = {
 
 export function AnswerBox({
   playerId,
+  roomId,
   min,
   max,
   submittedCount,
@@ -63,7 +65,7 @@ export function AnswerBox({
 
     setBusy(true);
     try {
-      await submitAnswer(playerId, n);
+      await submitAnswer(playerId, roomId, n);
       setValue("");
       onToast("제출 완료");
     } catch (err) {

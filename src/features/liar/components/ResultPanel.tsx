@@ -2,6 +2,7 @@
 
 type ResultPanelProps = {
   eliminatedName: string | null;
+  tiedPlayerNames: string[] | null;
   lastEliminatedWasTroll: boolean;
   lastEliminatedRole: "AUDIENCE" | "LIAR" | "TROLL" | null;
   joined: boolean;
@@ -12,6 +13,7 @@ type ResultPanelProps = {
 
 export function ResultPanel({
   eliminatedName,
+  tiedPlayerNames,
   lastEliminatedWasTroll,
   lastEliminatedRole,
   joined,
@@ -41,24 +43,39 @@ export function ResultPanel({
           </div>
           <div className="flex-1">
             <div className="text-xs text-gray-600 mb-1">탈락자</div>
-            <div className="text-xl font-bold text-gray-800">
-              {eliminatedName ?? "미정"}
-            </div>
-            {eliminatedName && lastEliminatedRole && (
-              <div className={[
-                "mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
-                lastEliminatedRole === "TROLL"
-                  ? "bg-orange-200 text-orange-800"
-                  : lastEliminatedRole === "LIAR"
-                  ? "bg-red-200 text-red-800"
-                  : "bg-blue-200 text-blue-800",
-              ].join(" ")}>
-                {lastEliminatedRole === "TROLL" 
-                  ? "🤡 트롤" 
-                  : lastEliminatedRole === "LIAR"
-                  ? "🎭 라이어"
-                  : "👥 관객"}
+            {tiedPlayerNames ? (
+              <div>
+                <div className="text-xl font-bold text-gray-800 mb-2">동점</div>
+                <div className="space-y-1">
+                  {tiedPlayerNames.map((name, idx) => (
+                    <div key={idx} className="text-base font-medium text-gray-700">
+                      • {name}
+                    </div>
+                  ))}
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-gray-800">
+                  {eliminatedName ?? "미정"}
+                </div>
+                {eliminatedName && lastEliminatedRole && (
+                  <div className={[
+                    "mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
+                    lastEliminatedRole === "TROLL"
+                      ? "bg-orange-200 text-orange-800"
+                      : lastEliminatedRole === "LIAR"
+                      ? "bg-red-200 text-red-800"
+                      : "bg-blue-200 text-blue-800",
+                  ].join(" ")}>
+                    {lastEliminatedRole === "TROLL" 
+                      ? "🤡 트롤" 
+                      : lastEliminatedRole === "LIAR"
+                      ? "🎭 라이어"
+                      : "👥 관객"}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -82,7 +99,7 @@ export function ResultPanel({
         ) : (
           <span className="flex items-center justify-center gap-2">
             <span>✅</span>
-            <span>결과 확정</span>
+            <span>확인</span>
           </span>
         )}
       </button>
@@ -90,7 +107,7 @@ export function ResultPanel({
       {!joined && (
         <div className="p-3 rounded-xl bg-gray-50 border-2 border-gray-200 flex items-center gap-2">
           <span className="text-xl">👁️</span>
-          <div className="text-sm text-gray-700">관전 중에는 결과 확정을 누를 수 없어요</div>
+          <div className="text-sm text-gray-700">관전 중에는 확인을 누를 수 없어요</div>
         </div>
       )}
     </section>

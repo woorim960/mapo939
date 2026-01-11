@@ -2,6 +2,7 @@
 
 import type { PublicState, Phase } from "../types";
 import { phaseLabel, getPhaseTheme, getRoleColor } from "../utils";
+import { RoomNameEditor } from "./RoomNameEditor";
 
 type GameHeaderProps = {
   publicState: PublicState | null;
@@ -13,6 +14,10 @@ type GameHeaderProps = {
   onResetAll: () => void;
   onShowHowTo: () => void;
   busy: boolean;
+  roomName: string | null;
+  isHost: boolean;
+  onUpdateRoomName: (name: string) => Promise<void>;
+  onLeaveRoom: () => Promise<void>;
 };
 
 function PhaseIcon({ phase }: { phase: Phase }) {
@@ -48,6 +53,10 @@ export function GameHeader({
   onResetAll,
   onShowHowTo,
   busy,
+  roomName,
+  isHost,
+  onUpdateRoomName,
+  onLeaveRoom,
 }: GameHeaderProps) {
   const joinedCount = publicState?.players.length ?? 0;
   const aliveCount = publicState?.players.filter((p) => p.isAlive).length ?? 0;
@@ -59,14 +68,16 @@ export function GameHeader({
     <>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <button
-            className="text-xs px-2 py-1 rounded-md text-gray-600 hover:bg-white/50 hover:text-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={onResetAll}
-            disabled={busy}
-            title="닉네임/점수/게임상태까지 모두 삭제"
-          >
-            🔄 전체 초기화
-          </button>
+          {isHost && (
+            <button
+              className="text-xs px-2 py-1 rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onResetAll}
+              disabled={busy}
+              title="방을 폭파하고 모든 플레이어를 내보냅니다"
+            >
+              💣 방 폭파
+            </button>
+          )}
 
           <button
             type="button"
@@ -82,6 +93,7 @@ export function GameHeader({
       </div>
 
       <header className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-5 animate-in fade-in slide-in-from-top-2 duration-300">
+        {/* 타이틀과 상태 배지를 같은 줄에 배치 */}
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
             🎭 라이어 게임
@@ -90,6 +102,17 @@ export function GameHeader({
             <PhaseIcon phase={phase} />
             <span>{phaseKo}</span>
           </div>
+        </div>
+
+        <div className="mb-3">
+          <div className="text-xs text-gray-500 mb-1">방 이름</div>
+          <RoomNameEditor
+            currentName={roomName}
+            isHost={isHost}
+            busy={busy}
+            onUpdate={onUpdateRoomName}
+            onLeaveRoom={onLeaveRoom}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-3">

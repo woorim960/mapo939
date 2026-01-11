@@ -21,7 +21,7 @@ export async function apiRequest<T>(
 
     if (!res.ok) {
       const error = await extractApiError(res);
-      const apiError = new ApiError(error.error, res.status, error.code);
+      const apiError = new ApiError(error.error, res.status, error.code, error.message);
       
       if (!skipErrorLog) {
         logError(`API Request Failed: ${url}`, apiError);

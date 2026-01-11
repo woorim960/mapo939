@@ -26,6 +26,8 @@ export type PublicState = {
   phase: Phase;
   hostPlayerId: string | null;
   players: PublicPlayer[];
+  roomName: string | null;
+  roomDeleted?: boolean;
   round: {
     index: number;
     questionId: string | null;

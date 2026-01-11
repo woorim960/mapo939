@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 type Body = {
   playerId: string;
+  roomId: string;
 
   // ✅ 프론트 입력(선택)
   liarCount?: number;
@@ -110,7 +111,8 @@ export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
 
   const playerId = body?.playerId?.trim();
-  if (!playerId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  const roomId = body?.roomId?.trim();
+  if (!playerId || !roomId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
   // ✅ 입력(선택)
   const liarInput = body?.liarCount;
@@ -118,7 +120,7 @@ export async function POST(req: Request): Promise<Response> {
   const audienceInput = body?.audienceCount;
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     // 방장만 시작 가능
     if (!state.hostPlayerId || state.hostPlayerId !== playerId) {
@@ -183,7 +185,7 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "cannot_build_state" }, { status: 400 });
     }
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) {
       return NextResponse.json({
         ok: true,

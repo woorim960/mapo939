@@ -5,7 +5,7 @@ import { QUESTIONS } from "@/lib/liar/questions"; // 너가 만든 questions.ts
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string };
+type Body = { playerId: string; roomId: string };
 
 type MeState = {
   role: "AUDIENCE" | "LIAR" | "TROLL" | null;
@@ -74,13 +74,14 @@ function toMeState(state: GameState, playerId: string): MeState {
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
   const playerId = body?.playerId?.trim();
+  const roomId = body?.roomId?.trim();
 
-  if (!playerId) {
+  if (!playerId || !roomId) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
   // ✅ 먼저 게임 상태 확인
-  const { state } = await getOrCreateGame();
+  const { state } = await getOrCreateGame(roomId);
   const phase = state.phase ?? "LOBBY";
   const canJoinNow = phase === "LOBBY" || phase === "PREP";
 
@@ -97,19 +98,21 @@ export async function POST(req: Request): Promise<Response> {
   // ✅ LOBBY나 PREP 상태에서는 DB에 player가 없어도 허용
   if (canJoinNow) {
     // DB에 있으면 게임 상태에 추가 시도
-    const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
+    const player = await p.liarPlayer.findUnique({
+      where: { id: playerId, gameId: roomId },
+    });
     
     if (player) {
       // DB에 있으면 게임 상태에 추가
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const { state: currentState, dbVersion } = await getOrCreateGame();
+        const { state: currentState, dbVersion } = await getOrCreateGame(roomId);
         const next = addPlayerIfMissing(currentState, playerId, player.nickname);
 
         if (next === currentState) {
           return NextResponse.json(toMeState(next, playerId));
         }
 
-        const res = await updateGameCAS(dbVersion, next);
+        const res = await updateGameCAS(roomId, dbVersion, next);
         if (res.ok) {
           return NextResponse.json(toMeState(next, playerId));
         }
@@ -123,21 +126,23 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // ✅ 게임이 시작된 후(ANSWERING 이후)에는 DB에 player가 반드시 있어야 함
-  const player = await p.liarPlayer.findUnique({ where: { id: playerId } });
+  const player = await p.liarPlayer.findUnique({
+    where: { id: playerId, gameId: roomId },
+  });
   if (!player) {
     return NextResponse.json({ error: "unknown_player" }, { status: 404 });
   }
 
   // state에 없으면 복구(addPlayerIfMissing) + CAS
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state: currentState, dbVersion } = await getOrCreateGame();
+    const { state: currentState, dbVersion } = await getOrCreateGame(roomId);
     const next = addPlayerIfMissing(currentState, playerId, player.nickname);
 
     if (next === currentState) {
       return NextResponse.json(toMeState(next, playerId));
     }
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) {
       return NextResponse.json(toMeState(next, playerId));
     }

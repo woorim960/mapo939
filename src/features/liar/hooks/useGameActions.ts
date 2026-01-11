@@ -17,6 +17,7 @@ import { removeLS, setLS } from "@/shared/utils/storage";
 
 type UseGameActionsProps = {
   playerId: string;
+  roomId: string;
   publicVersionRef: React.MutableRefObject<number>;
   setPublicState: (state: any) => void;
   setJoined: (joined: boolean) => void;
@@ -31,6 +32,7 @@ type UseGameActionsProps = {
 
 export function useGameActions({
   playerId,
+  roomId,
   publicVersionRef,
   setPublicState,
   setJoined,
@@ -54,7 +56,7 @@ export function useGameActions({
   async function refreshGameState() {
     try {
       clearVersionCache();
-      const state = await fetchGameState(0);
+      const state = await fetchGameState(roomId, 0);
       if (state) {
         setPublicState(state);
         setLS("liar_version", String(state.version));
@@ -68,7 +70,7 @@ export function useGameActions({
   async function handleJoin(nickname: string): Promise<string | null> {
     setBusy(true);
     try {
-      await joinGame(playerId, nickname);
+      await joinGame(playerId, roomId, nickname);
       setMe(null);
       setJoined(true);
       setSpectatorLocked(false);
@@ -76,7 +78,7 @@ export function useGameActions({
       return null; // 성공
     } catch (err) {
       if (err instanceof ApiError) {
-        return msgFromErrorCode(err.code);
+        return msgFromErrorCode(err.code, err.serverMessage);
       }
       return "잠시 후 다시 시도해주세요";
     } finally {
@@ -91,7 +93,7 @@ export function useGameActions({
   }) {
     setBusy(true);
     try {
-      await startGame(playerId, roleCounts);
+      await startGame(playerId, roomId, roleCounts);
       setToast("게임 시작");
       await refreshGameState();
       return true;
@@ -110,7 +112,7 @@ export function useGameActions({
   async function handleResetRound() {
     setBusy(true);
     try {
-      await restartRound(playerId);
+      await restartRound(playerId, roomId);
       setVoteMode(false);
       setSelectedVoteTargetId("");
       setMyVotedTargetId("");
@@ -137,7 +139,7 @@ export function useGameActions({
 
     setBusy(true);
     try {
-      await goToVoting(playerId);
+      await goToVoting(playerId, roomId);
       setToast("투표로 이동");
       await refreshGameState();
       return true;
@@ -160,7 +162,7 @@ export function useGameActions({
 
     setBusy(true);
     try {
-      await submitVote(playerId, targetPlayerId);
+      await submitVote(playerId, roomId, targetPlayerId);
       setMyVotedTargetId(targetPlayerId);
       setToast("투표 완료");
       await refreshGameState();
@@ -180,8 +182,8 @@ export function useGameActions({
   async function handleFinalizeResult() {
     setBusy(true);
     try {
-      await finalizeResult(playerId);
-      setToast("결과 확정");
+      await finalizeResult(playerId, roomId);
+      setToast("확인");
       await refreshGameState();
       return true;
     } catch (err) {
@@ -199,11 +201,12 @@ export function useGameActions({
   async function handleResetAll() {
     setBusy(true);
     try {
-      await resetGame(playerId);
+      await resetGame(playerId, roomId);
       removeLS("liar_player_id");
       removeLS("liar_nickname");
       removeLS("liar_version");
-      location.reload();
+      // 방장도 방 목록 페이지로 이동 (쿼리 파라미터로 메시지 전달)
+      window.location.href = "/liar?roomDeleted=true";
     } catch {
       setToast("잠시 후 다시 시도해주세요");
       setBusy(false);
@@ -221,5 +224,6 @@ export function useGameActions({
     handleSubmitVote,
     handleFinalizeResult,
     handleResetAll,
+    refreshGameState,
   };
 }

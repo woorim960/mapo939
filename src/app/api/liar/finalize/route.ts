@@ -4,16 +4,16 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string };
+type Body = { playerId: string; roomId: string };
 
 const AUTO_RESTART_DELAY_MS = 4500;
 const FINAL_SCORE = 300;
 
-async function buildScoreMap(playerIds: string[]): Promise<Record<string, number>> {
+async function buildScoreMap(playerIds: string[], roomId: string): Promise<Record<string, number>> {
   if (playerIds.length === 0) return {};
   const p = prisma();
   const rows = await p.liarPlayer.findMany({
-    where: { id: { in: playerIds } },
+    where: { id: { in: playerIds }, gameId: roomId },
     select: { id: true, score: true },
   });
   const map: Record<string, number> = {};
@@ -76,13 +76,14 @@ function aliveCountByRole(
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
   const playerId = body?.playerId?.trim();
+  const roomId = body?.roomId?.trim();
 
-  if (!playerId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  if (!playerId || !roomId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
   const p = prisma();
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     if (!isAlive(state, playerId)) {
       return NextResponse.json({ error: "not_alive" }, { status: 403 });
@@ -114,7 +115,7 @@ export async function POST(req: Request): Promise<Response> {
         },
       };
 
-      const r = await updateGameCAS(dbVersion, nextTie);
+      const r = await updateGameCAS(roomId, dbVersion, nextTie);
       if (r.ok) return NextResponse.json({ ok: true, movedTo: "TIE_DISCUSS" });
       continue;
     }
@@ -144,13 +145,13 @@ export async function POST(req: Request): Promise<Response> {
       // ✅ 트롤 보너스 지급 (트랜잭션으로 원자성 보장)
       if (shouldPayTrollDeathBonus) {
         await p.liarPlayer.update({
-          where: { id: eliminatedId },
+          where: { id: eliminatedId, gameId: roomId },
           data: { score: { increment: 100 } },
         });
       }
 
       // 점수 확인 (트롤 보너스 반영 후)
-      const scoreMap = await buildScoreMap(ids);
+      const scoreMap = await buildScoreMap(ids, roomId);
       const finalChampions = computeFinalChampions(ids, scoreMap);
 
       // ✅ 300점 달성자가 있으면 GAME_OVER (최종 우승)
@@ -174,7 +175,7 @@ export async function POST(req: Request): Promise<Response> {
           },
         };
 
-        const res = await updateGameCAS(dbVersion, nextGameOver);
+        const res = await updateGameCAS(roomId, dbVersion, nextGameOver);
         if (!res.ok) continue;
 
         return NextResponse.json({
@@ -212,7 +213,7 @@ export async function POST(req: Request): Promise<Response> {
           },
         };
 
-        const r = await updateGameCAS(dbVersion, nextTieDiscuss);
+        const r = await updateGameCAS(roomId, dbVersion, nextTieDiscuss);
         if (!r.ok) continue;
 
         return NextResponse.json({
@@ -241,7 +242,7 @@ export async function POST(req: Request): Promise<Response> {
         },
       };
 
-      const r = await updateGameCAS(dbVersion, nextStayResult);
+      const r = await updateGameCAS(roomId, dbVersion, nextStayResult);
       if (!r.ok) continue;
 
       return NextResponse.json({
@@ -276,7 +277,7 @@ export async function POST(req: Request): Promise<Response> {
     if (winners.length > 0) {
       tx.push(
         p.liarPlayer.updateMany({
-          where: { id: { in: winners } },
+          where: { id: { in: winners }, gameId: roomId },
           data: { score: { increment: 100 } },
         })
       );
@@ -285,7 +286,7 @@ export async function POST(req: Request): Promise<Response> {
     if (shouldPayTrollDeathBonus) {
       tx.push(
         p.liarPlayer.update({
-          where: { id: eliminatedId },
+          where: { id: eliminatedId, gameId: roomId },
           data: { score: { increment: 100 } },
         })
       );
@@ -297,7 +298,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // ✅ 점수 지급 후 확인하여 최종 우승자 확인
-    const scoreMapAfter = await buildScoreMap(ids);
+    const scoreMapAfter = await buildScoreMap(ids, roomId);
     const finalChampionsAfter = computeFinalChampions(ids, scoreMapAfter);
 
     const championPlayerId = finalChampionsAfter.length > 0 
@@ -325,7 +326,7 @@ export async function POST(req: Request): Promise<Response> {
       },
     };
 
-    const res = await updateGameCAS(dbVersion, nextGameOver);
+    const res = await updateGameCAS(roomId, dbVersion, nextGameOver);
     if (!res.ok) continue;
 
     return NextResponse.json({

@@ -4,7 +4,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number = 0,
-    public code?: string
+    public code?: string,
+    public serverMessage?: string
   ) {
     super(message);
     this.name = "ApiError";
@@ -14,6 +15,7 @@ export class ApiError extends Error {
 export type ApiErrorResponse = {
   error: string;
   code?: string;
+  message?: string;
 };
 
 /**
@@ -23,7 +25,11 @@ export async function extractApiError(res: Response): Promise<ApiErrorResponse> 
   try {
     const data = await res.json();
     if (typeof data === "object" && data !== null && "error" in data) {
-      return data as ApiErrorResponse;
+      return {
+        error: data.error || "잠시 후 다시 시도해주세요",
+        code: data.code,
+        message: data.message,
+      } as ApiErrorResponse;
     }
     return { error: "잠시 후 다시 시도해주세요" };
   } catch {

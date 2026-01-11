@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/liar/db";
+import { prisma, deleteRoom } from "@/lib/liar/db";
 
 export const runtime = "nodejs";
 
-type Body = { playerId?: string }; // 이제 권한 체크 안 해서 optional로 둬도 됨
+type Body = { playerId?: string; roomId?: string };
 
 export async function POST(req: Request): Promise<Response> {
-  // body는 받아도 되고 안 받아도 됨 (로그용)
-  void ((await req.json().catch(() => null)) as Body | null);
+  const body = (await req.json().catch(() => null)) as Body | null;
+  const roomId = body?.roomId?.trim();
 
+  // roomId가 있으면 해당 방만 삭제
+  if (roomId) {
+    const success = await deleteRoom(roomId);
+    if (!success) {
+      return NextResponse.json({ ok: false, error: "room_not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // roomId가 없으면 전체 초기화 (관리자용)
   const p = prisma();
 
   try {
     await p.$transaction(async tx => {
       // ✅ 플레이어/점수/닉네임 전부 삭제
       await tx.liarPlayer.deleteMany({});
-      // ✅ 게임 상태 1-row도 삭제 (완전 초기화)
+      // ✅ 게임 상태 전부 삭제 (완전 초기화)
       await tx.liarGame.deleteMany({});
     });
   } catch {

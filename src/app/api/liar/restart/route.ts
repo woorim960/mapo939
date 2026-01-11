@@ -4,7 +4,7 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string };
+type Body = { playerId: string; roomId: string };
 
 const FINAL_SCORE = 300;
 
@@ -47,11 +47,11 @@ function restartStateKeepPlayers(state: GameState): GameState {
   };
 }
 
-async function buildScoreMap(playerIds: string[]): Promise<Record<string, number>> {
+async function buildScoreMap(playerIds: string[], roomId: string): Promise<Record<string, number>> {
   if (playerIds.length === 0) return {};
   const p = prisma();
   const rows = await p.liarPlayer.findMany({
-    where: { id: { in: playerIds } },
+    where: { id: { in: playerIds }, gameId: roomId },
     select: { id: true, score: true },
   });
   const map: Record<string, number> = {};
@@ -62,13 +62,14 @@ async function buildScoreMap(playerIds: string[]): Promise<Record<string, number
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
   const playerId = body?.playerId?.trim();
+  const roomId = body?.roomId?.trim();
 
-  if (!playerId) {
+  if (!playerId || !roomId) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     if (!state.hostPlayerId || state.hostPlayerId !== playerId) {
       return NextResponse.json({ error: "only_host" }, { status: 403 });
@@ -80,13 +81,13 @@ export async function POST(req: Request): Promise<Response> {
 
     // ✅ 300점 달성자가 있으면 점수 전원 0
     const ids = (state.players ?? []).map(p => p.playerId);
-    const scoreMap = await buildScoreMap(ids);
+    const scoreMap = await buildScoreMap(ids, roomId);
     const shouldResetScores = ids.some(id => (scoreMap[id] ?? 0) >= FINAL_SCORE);
 
     if (shouldResetScores && ids.length > 0) {
       const p = prisma();
       await p.liarPlayer.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, gameId: roomId },
         data: { score: 0 },
       });
     }
@@ -94,7 +95,7 @@ export async function POST(req: Request): Promise<Response> {
     const next = restartStateKeepPlayers(state);
     next.version = (state.version ?? 0) + 1;
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) return NextResponse.json({ ok: true, scoreReset: shouldResetScores });
   }
 

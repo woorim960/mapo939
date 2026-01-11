@@ -4,7 +4,7 @@ import type { GameState } from "@/lib/liar/types";
 
 export const runtime = "nodejs";
 
-type Body = { playerId: string };
+type Body = { playerId: string; roomId: string };
 
 function isAlive(state: GameState, playerId: string): boolean {
   return Boolean(state.players?.find(p => p.playerId === playerId)?.isAlive);
@@ -17,11 +17,12 @@ function canStartVoting(phase: GameState["phase"]): boolean {
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => null)) as Body | null;
   const playerId = body?.playerId?.trim();
+  const roomId = body?.roomId?.trim();
 
-  if (!playerId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  if (!playerId || !roomId) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
 
     if (!canStartVoting(state.phase)) {
       return NextResponse.json({ error: "not_allowed_phase", phase: state.phase }, { status: 400 });
@@ -44,7 +45,7 @@ export async function POST(req: Request): Promise<Response> {
       version: (state.version ?? 0) + 1,
     };
 
-    const res = await updateGameCAS(dbVersion, next);
+    const res = await updateGameCAS(roomId, dbVersion, next);
     if (res.ok) return NextResponse.json({ ok: true, phase: "VOTING" });
   }
 

@@ -17,14 +17,27 @@ export const runtime = "nodejs";
 export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const v = Number(url.searchParams.get("v") ?? "0") || 0;
+  const roomId = url.searchParams.get("roomId")?.trim();
   const now = Date.now();
 
+  if (!roomId) {
+    return NextResponse.json({ error: "roomId_required" }, { status: 400 });
+  }
+
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame();
+    const { state, dbVersion } = await getOrCreateGame(roomId);
     const ids = (state.players ?? []).map(p => p.playerId);
 
-    // 점수는 매번 DB에서
-    const scoreMap = await buildScoreMap(ids);
+    // 점수는 매번 DB에서 (방별로)
+    const scoreMap = await buildScoreMap(ids, roomId);
+    
+    // 방 이름 가져오기
+    const p = prisma();
+    const game = await p.liarGame.findUnique({
+      where: { id: roomId },
+      select: { name: true },
+    });
+    const roomName = game?.name ?? null;
 
     // ✅ GAME_OVER 자동 리셋 처리
     if (state.phase === "GAME_OVER") {
@@ -39,11 +52,11 @@ export async function GET(req: Request): Promise<Response> {
           autoRestartAt: now + 4500,
         };
 
-        const r = await updateGameCAS(dbVersion, nextSetTimer);
+        const r = await updateGameCAS(roomId, dbVersion, nextSetTimer);
         if (!r.ok) continue;
 
         // 예약 박은 상태 반환
-        return NextResponse.json(toPublicState(nextSetTimer, scoreMap));
+        return NextResponse.json(toPublicState(nextSetTimer, scoreMap, roomName));
       }
 
       // 2) 예약 시간이 지났고, 최종 우승자가 있다면 → 점수 0 + 새 게임으로 리셋
@@ -53,7 +66,7 @@ export async function GET(req: Request): Promise<Response> {
         // 점수 전원 0 리셋(현재 방 참가자)
         if (ids.length > 0) {
           await p.liarPlayer.updateMany({
-            where: { id: { in: ids } },
+            where: { id: { in: ids }, gameId: roomId },
             data: { score: 0 },
           });
         }
@@ -61,15 +74,15 @@ export async function GET(req: Request): Promise<Response> {
         const next = restartStateKeepPlayersAndResetRound(state);
         next.version = (state.version ?? 0) + 1;
 
-        const r = await updateGameCAS(dbVersion, next);
+        const r = await updateGameCAS(roomId, dbVersion, next);
         if (!r.ok) continue;
 
-        const scoreMapAfter = await buildScoreMap(ids);
-        return NextResponse.json(toPublicState(next, scoreMapAfter));
+        const scoreMapAfter = await buildScoreMap(ids, roomId);
+        return NextResponse.json(toPublicState(next, scoreMapAfter, roomName));
       }
 
       // 아직 시간 전이면 그냥 GAME_OVER 상태 반환(프론트가 축하 UI 띄움)
-      return NextResponse.json(toPublicState(state, scoreMap));
+      return NextResponse.json(toPublicState(state, scoreMap, roomName));
     }
 
     // ✅ 버전이 변하지 않았고 + 자동 전환 조건도 아니면 204
@@ -82,20 +95,26 @@ export async function GET(req: Request): Promise<Response> {
     // ✅ 자동 전환 조건이면: VOTING으로 CAS 업데이트 후 그 상태 반환
     if (shouldAutoAdvanceToVoting(state, now)) {
       const next = advanceToVoting(state);
-      const res = await updateGameCAS(dbVersion, next);
+      const res = await updateGameCAS(roomId, dbVersion, next);
       if (!res.ok) continue;
 
-      const scoreMap2 = await buildScoreMap((next.players ?? []).map(p => p.playerId));
-      return NextResponse.json(toPublicState(next, scoreMap2));
+      const scoreMap2 = await buildScoreMap((next.players ?? []).map(p => p.playerId), roomId);
+      return NextResponse.json(toPublicState(next, scoreMap2, roomName));
     }
 
     // ✅ 그 외엔 현재 state 그대로 반환
-    return NextResponse.json(toPublicState(state, scoreMap));
+    return NextResponse.json(toPublicState(state, scoreMap, roomName));
   }
 
   // CAS 충돌 fallback
-  const { state } = await getOrCreateGame();
+  const { state } = await getOrCreateGame(roomId);
   const ids = (state.players ?? []).map(p => p.playerId);
-  const scoreMap = await buildScoreMap(ids);
-  return NextResponse.json(toPublicState(state, scoreMap));
+  const scoreMap = await buildScoreMap(ids, roomId);
+  const p = prisma();
+  const game = await p.liarGame.findUnique({
+    where: { id: roomId },
+    select: { name: true },
+  });
+  const roomName = game?.name ?? null;
+  return NextResponse.json(toPublicState(state, scoreMap, roomName));
 }
