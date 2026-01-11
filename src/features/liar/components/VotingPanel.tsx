@@ -32,6 +32,12 @@ export function VotingPanel({
 }: VotingPanelProps) {
   const phase = publicState?.phase ?? "LOBBY";
 
+  // 투표 진행 상황 계산
+  const aliveCount = publicState?.players.filter((p) => p.isAlive).length ?? 0;
+  const voteCounts = publicState?.round.voteCounts ?? {};
+  const votedCount = Object.values(voteCounts).reduce((sum, count) => sum + count, 0);
+  const remainingCount = Math.max(0, aliveCount - votedCount);
+
   return (
     <section className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex items-center justify-between mb-4">
@@ -41,6 +47,32 @@ export function VotingPanel({
         </div>
         <div className="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-100 text-rose-700">{phaseKo}</div>
       </div>
+
+      {/* 투표 진행 상황 표시 */}
+      {phase === "VOTING" && aliveCount > 0 && (
+        <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-rose-100 to-pink-100 border-2 border-rose-300">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-rose-800 flex items-center gap-2">
+              <span>📊</span>
+              <span>투표 진행 상황</span>
+            </div>
+            <div className="text-sm font-bold text-rose-700">
+              {votedCount} / {aliveCount}
+            </div>
+          </div>
+          <div className="mt-2 w-full bg-rose-200 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-rose-500 to-pink-500 h-full transition-all duration-300 ease-out"
+              style={{ width: `${aliveCount > 0 ? (votedCount / aliveCount) * 100 : 0}%` }}
+            />
+          </div>
+          {remainingCount > 0 && (
+            <div className="mt-1.5 text-xs text-rose-600 text-right">
+              {remainingCount}명 남음
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200">
         <div className="text-sm font-semibold text-rose-800 flex items-center gap-2">

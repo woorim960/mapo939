@@ -318,6 +318,8 @@ export default function LiarPage() {
               phase={phase}
               discussEndsAt={game.publicState.round.discussEndsAt}
               tieDiscussEndsAt={game.publicState.round.tieDiscussEndsAt}
+              lastEliminatedPlayerId={game.publicState.lastEliminatedPlayerId}
+              eliminatedName={eliminatedName}
             />
           )}
 

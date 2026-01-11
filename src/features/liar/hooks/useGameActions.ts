@@ -164,7 +164,6 @@ export function useGameActions({
       setMyVotedTargetId(targetPlayerId);
       setToast("투표 완료");
       await refreshGameState();
-      await handleFinalizeResult();
       return true;
     } catch (err) {
       if (err instanceof ApiError) {
