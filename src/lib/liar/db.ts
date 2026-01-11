@@ -370,42 +370,82 @@ export async function deleteRoom(roomId: string): Promise<boolean> {
       version: (existingRoom.version ?? 0) + 1,
     };
     
-    // CAS 업데이트로 플래그 설정
-    const res = await updateGameCAS(roomId, existingRoom.version, nextState);
-    if (!res.ok) {
-      // CAS 실패 시 재시도
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        const retryRoom = await p.liarGame.findUnique({
-          where: { id: roomId },
-          select: { id: true, version: true, stateJson: true },
-        });
-        if (!retryRoom) {
-          // 재시도 중 방이 이미 삭제되었으면 성공
-          return true;
-        }
-        const retryState = retryRoom.stateJson as unknown as GameState;
-        const retryNextState = {
-          ...retryState,
-          roomDeleted: true,
-          version: (retryRoom.version ?? 0) + 1,
-        };
-        const retryRes = await updateGameCAS(roomId, retryRoom.version, retryNextState);
-        if (retryRes.ok) {
-          break;
-        }
+    // CAS 업데이트로 플래그 설정 (재시도 로직 개선)
+    let flagSet = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const currentRoom = await p.liarGame.findUnique({
+        where: { id: roomId },
+        select: { id: true, version: true, stateJson: true },
+      });
+      if (!currentRoom) {
+        // 재시도 중 방이 이미 삭제되었으면 성공
+        return true;
+      }
+      const currentState = currentRoom.stateJson as unknown as GameState;
+      const flagState = {
+        ...currentState,
+        roomDeleted: true,
+        version: (currentRoom.version ?? 0) + 1,
+      };
+      const res = await updateGameCAS(roomId, currentRoom.version, flagState);
+      if (res.ok) {
+        flagSet = true;
+        break;
       }
     }
     
     // 플래그 설정 후 잠시 대기 (플레이어들이 감지할 시간 제공)
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (flagSet) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     
-    // 플레이어 정보 삭제
-    await p.liarPlayer.deleteMany({
-      where: { gameId: roomId },
+    // ✅ 트랜잭션으로 원자적으로 플레이어 정보와 방 삭제
+    await p.$transaction(async (tx) => {
+      // 플레이어 정보 삭제
+      await tx.liarPlayer.deleteMany({
+        where: { gameId: roomId },
+      });
+      
+      // 방 삭제
+      await tx.liarGame.delete({ 
+        where: { id: roomId } 
+      });
     });
     
-    // 방 삭제
-    await p.liarGame.delete({ where: { id: roomId } });
+    // 삭제 확인 (재시도로 확실히 삭제되었는지 확인)
+    for (let retry = 0; retry < 3; retry += 1) {
+      const deleted = await p.liarGame.findUnique({
+        where: { id: roomId },
+        select: { id: true },
+      });
+      if (!deleted) {
+        console.log("[deleteRoom] Room deleted successfully:", roomId);
+        return true;
+      }
+      // 아직 삭제되지 않았으면 다시 시도
+      await new Promise(resolve => setTimeout(resolve, 100 * (retry + 1)));
+      try {
+        await p.liarPlayer.deleteMany({
+          where: { gameId: roomId },
+        });
+        await p.liarGame.delete({ 
+          where: { id: roomId } 
+        });
+      } catch (err) {
+        console.error("[deleteRoom] Retry delete failed:", err);
+      }
+    }
+    
+    // 최종 확인
+    const finalCheck = await p.liarGame.findUnique({
+      where: { id: roomId },
+      select: { id: true },
+    });
+    
+    if (finalCheck) {
+      console.error("[deleteRoom] Room still exists after deletion attempt:", roomId);
+      return false;
+    }
     
     console.log("[deleteRoom] Room deleted successfully:", roomId);
     return true;
