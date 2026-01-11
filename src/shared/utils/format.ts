@@ -13,7 +13,7 @@ export function todayLabel(status?: AttendanceStatus): string {
 }
 
 export function badgeTone(status?: AttendanceStatus): string {
-  if (status === "PRESENT") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (status === "LATE") return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-neutral-50 text-neutral-700 border-neutral-200";
+  if (status === "PRESENT") return "bg-emerald-600 text-white border-emerald-600";
+  if (status === "LATE") return "bg-amber-700 text-white border-amber-700";
+  return "bg-neutral-200 text-neutral-600 border-neutral-300";
 }

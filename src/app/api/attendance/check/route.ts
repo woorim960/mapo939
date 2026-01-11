@@ -7,6 +7,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({} as any));
   const memberId = typeof body.memberId === "string" ? body.memberId : "";
   const status = body.status === "PRESENT" || body.status === "LATE" ? body.status : null;
+  const customPoints = typeof body.points === "number" ? body.points : null;
 
   if (!memberId || !status) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
@@ -15,7 +16,13 @@ export async function POST(req: Request) {
   const todayYmd = getKstYmdKey();
   const isSunday = isSundayKst(todayYmd);
 
-  if (!isSunday) {
+  // 커스텀 포인트 입력 시 관리자 인증 필수
+  if (customPoints !== null) {
+    const admin = await requireAdminSession();
+    if (!admin) {
+      return NextResponse.json({ error: "admin_required" }, { status: 401 });
+    }
+  } else if (!isSunday) {
     const admin = await requireAdminSession();
     if (!admin) {
       return NextResponse.json({ error: "admin_required" }, { status: 401 });
@@ -23,7 +30,12 @@ export async function POST(req: Request) {
   }
 
   const date = kstYmdToUtcDate(todayYmd);
-  const points = pointsFor(status);
+  const points = customPoints !== null ? customPoints : pointsFor(status);
+
+  // 포인트 유효성 검증
+  if (!Number.isFinite(points) || points < 0) {
+    return NextResponse.json({ error: "invalid_points" }, { status: 400 });
+  }
 
   // upsert: 같은 날이면 status/points가 자동 정정됨
   const record = await prisma.attendance.upsert({

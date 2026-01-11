@@ -1,6 +1,6 @@
 // 공유 Modal 컴포넌트
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 type ModalProps = {
   children: React.ReactNode;
@@ -8,17 +8,65 @@ type ModalProps = {
 };
 
 export function Modal({ children, onClose }: ModalProps) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    // 모달이 마운트된 후 애니메이션 시작
+    const timer = setTimeout(() => setIsVisible(true), 10);
+    return () => clearTimeout(timer);
+  }, []);
+
+  function handleBackdropClick(e: React.MouseEvent) {
+    if (e.target === e.currentTarget) {
+      setIsVisible(false);
+      setTimeout(onClose, 200);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      setIsVisible(false);
+      setTimeout(onClose, 200);
+    }
+  }
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsVisible(false);
+        setTimeout(onClose, 200);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "unset";
+    };
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50">
-      {/* overlay를 button이 아니라 div로 (모바일에서 포커스/중첩 이슈 예방) */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-200 ${
+          isVisible ? "opacity-100" : "opacity-0"
+        }`}
+        onClick={handleBackdropClick}
         aria-label="close overlay"
         role="button"
         tabIndex={0}
+        onKeyDown={handleKeyDown}
       />
-      <div className="absolute left-1/2 top-1/2 w-[min(920px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-4 shadow-xl md:p-6">
+      
+      {/* Modal Content */}
+      <div
+        className={`relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
+          isVisible
+            ? "opacity-100 scale-100 translate-y-0"
+            : "opacity-0 scale-95 translate-y-4"
+        }`}
+      >
         {children}
       </div>
     </div>

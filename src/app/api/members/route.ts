@@ -32,65 +32,92 @@ type MemberWithStats = MemberRow & {
  * - (요청대로) totalPoints(누적 포인트) 내림차순 정렬
  */
 export async function GET() {
-  const yearStart = getYearStartKst();
+  try {
+    const yearStart = getYearStartKst();
 
-  // ✅ 오늘(KST) 키 -> UTC Date로 변환 (Attendance.date에 저장된 값과 동일 포맷)
-  const todayYmd = getKstYmdKey();
-  const todayDate = kstYmdToUtcDate(todayYmd);
+    // ✅ 오늘(KST) 키 -> UTC Date로 변환 (Attendance.date에 저장된 값과 동일 포맷)
+    const todayYmd = getKstYmdKey();
+    const todayDate = kstYmdToUtcDate(todayYmd);
 
-  // ✅ 활성 멤버 기본 정보
-  const members: MemberRow[] = await prisma.member.findMany({
-    where: { isActive: true },
-    select: {
-      id: true,
-      name: true,
-      phone: true, // ✅ 공개
-      birthDate: true,
-      photoUrl: true,
-      isActive: true,
-    },
-  });
+    // ✅ 활성 멤버 기본 정보
+    const members: MemberRow[] = await prisma.member.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        phone: true, // ✅ 공개
+        birthDate: true,
+        photoUrl: true,
+        isActive: true,
+      },
+    });
 
-  // ✅ 올해 출석(출석/지각) 횟수
-  const counts = (await prisma.attendance.groupBy({
-    by: ["memberId"],
-    where: {
-      date: { gte: yearStart },
-      status: { in: ["PRESENT", "LATE"] },
-    },
-    _count: { _all: true },
-  })) as unknown as CountRow[];
+    // ✅ 올해 출석(출석/지각) 횟수
+    const counts = (await prisma.attendance.groupBy({
+      by: ["memberId"],
+      where: {
+        date: { gte: yearStart },
+        status: { in: ["PRESENT", "LATE"] },
+      },
+      _count: { _all: true },
+    })) as unknown as CountRow[];
 
-  const countMap = new Map<string, number>(counts.map((c) => [c.memberId, c._count._all]));
+    const countMap = new Map<string, number>(counts.map((c) => [c.memberId, c._count._all]));
 
-  // ✅ 누적 포인트
-  const sums = (await prisma.attendance.groupBy({
-    by: ["memberId"],
-    where: { status: { in: ["PRESENT", "LATE"] } },
-    _sum: { points: true },
-  })) as unknown as SumRow[];
+    // ✅ 누적 포인트 (출석)
+    const sums = (await prisma.attendance.groupBy({
+      by: ["memberId"],
+      where: { status: { in: ["PRESENT", "LATE"] } },
+      _sum: { points: true },
+    })) as unknown as SumRow[];
 
-  const sumMap = new Map<string, number>(sums.map((s) => [s.memberId, s._sum.points ?? 0]));
+    const attendanceSumMap = new Map<string, number>(sums.map((s) => [s.memberId, s._sum.points ?? 0]));
 
-  // ✅ 오늘 상태(PRESENT/LATE/ABSENT) 계산용: 오늘 날짜의 출석 기록만 조회
-  const todayRows = (await prisma.attendance.findMany({
-    where: { date: todayDate },
-    select: { memberId: true, status: true },
-  })) as unknown as TodayRow[];
+    // ✅ 보너스 점수 합계
+    let bonusSumMap = new Map<string, number>();
+    try {
+      const bonusSums = (await prisma.bonusPoints.groupBy({
+        by: ["memberId"],
+        _sum: { points: true },
+      })) as unknown as SumRow[];
 
-  const todayMap = new Map<string, TodayRow["status"]>(todayRows.map((r) => [r.memberId, r.status]));
+      bonusSumMap = new Map<string, number>(bonusSums.map((s) => [s.memberId, s._sum.points ?? 0]));
+    } catch (err) {
+      // 보너스 점수 테이블이 없거나 에러가 발생하면 빈 맵 사용
+      console.error("보너스 점수 조회 실패:", err);
+    }
 
-  const result: MemberWithStats[] = members
-    .map((m) => ({
-      ...m,
-      yearAttendanceCount: countMap.get(m.id) ?? 0,
-      totalPoints: sumMap.get(m.id) ?? 0,
-      todayStatus: (todayMap.get(m.id) ?? "ABSENT") as TodayStatus,
-    }))
-    // ✅ 완전히 포인트만 기준으로 내림차순 정렬
-    .sort((a, b) => b.totalPoints - a.totalPoints);
+    // ✅ 총 포인트 계산 (출석 + 보너스)
+    const sumMap = new Map<string, number>();
+    members.forEach((m) => {
+      const attendancePoints = attendanceSumMap.get(m.id) ?? 0;
+      const bonusPoints = bonusSumMap.get(m.id) ?? 0;
+      sumMap.set(m.id, attendancePoints + bonusPoints);
+    });
 
-  return NextResponse.json({ members: result, todayYmd });
+    // ✅ 오늘 상태(PRESENT/LATE/ABSENT) 계산용: 오늘 날짜의 출석 기록만 조회
+    const todayRows = (await prisma.attendance.findMany({
+      where: { date: todayDate },
+      select: { memberId: true, status: true },
+    })) as unknown as TodayRow[];
+
+    const todayMap = new Map<string, TodayRow["status"]>(todayRows.map((r) => [r.memberId, r.status]));
+
+    const result: MemberWithStats[] = members
+      .map((m) => ({
+        ...m,
+        yearAttendanceCount: countMap.get(m.id) ?? 0,
+        totalPoints: sumMap.get(m.id) ?? 0,
+        todayStatus: (todayMap.get(m.id) ?? "ABSENT") as TodayStatus,
+      }))
+      // ✅ 완전히 포인트만 기준으로 내림차순 정렬
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+
+    return NextResponse.json({ members: result, todayYmd });
+  } catch (err) {
+    console.error("멤버 목록 조회 실패:", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
 }
 
 /**

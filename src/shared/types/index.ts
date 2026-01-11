@@ -20,13 +20,28 @@ export type Stats = {
   all: { performedDays: number; totalAttendance: number; avgAttendance: number };
 };
 
+export type BonusPointsRecord = {
+  id: string;
+  points: number;
+  reason: string;
+  createdAt: string; // ISO
+};
+
 export type MemberStats = {
   member: { id: string; name: string; phone: string; birthDate: string; photoUrl: string; age: number };
-  points: { total: number; yearTotal: number };
+  points: {
+    total: number;
+    yearTotal: number;
+    attendanceTotal: number;
+    attendanceYearTotal: number;
+    bonusTotal: number;
+    bonusYearTotal: number;
+  };
   attendance: {
     month: { present: number; late: number; count: number; meetingDays: number; rate: number };
     year: { present: number; late: number; count: number; meetingDays: number; rate: number };
   };
+  bonusPoints: BonusPointsRecord[];
 };
 
 export type AdminMe = {

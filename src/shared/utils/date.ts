@@ -28,3 +28,13 @@ export function remainingMs(endsAt: number | null): number {
   if (!endsAt) return 0;
   return Math.max(0, endsAt - Date.now());
 }
+
+export function fmtYmdHm(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const h = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day} ${h}:${min}`;
+}

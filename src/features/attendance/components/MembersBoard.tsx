@@ -5,9 +5,11 @@ import { koreanAgeFromBirthDate } from "@/lib/ui-age";
 import { useMembers } from "../hooks/useMembers";
 import { useAdmin } from "../hooks/useAdmin";
 import { useMemberForm } from "../hooks/useMemberForm";
-import { checkAttendance, markAbsent, fetchMemberStats, deleteMember, logout } from "../api";
+import { checkAttendance, markAbsent, fetchMemberStats, deleteMember, logout, addBonusPoints } from "../api";
 import { ApiError } from "@/shared/utils/error";
 import { MemberSection } from "./MemberSection";
+import { BirthdaySection } from "./BirthdaySection";
+import { RankingPodium } from "./RankingPodium";
 import { MemberModal } from "./MemberModal";
 import { MemberForm } from "./MemberForm";
 import { LoginModal } from "./LoginModal";
@@ -41,6 +43,41 @@ export function MembersBoard() {
       student: withAge.filter((m) => m.age < 20),
     };
   }, [members]);
+
+  // 포인트 랭킹 TOP 3 계산 (공동 순위 처리)
+  const rankedGroups = useMemo(() => {
+    const allMembers = [...youth, ...student]
+      .filter((m) => (m.totalPoints ?? 0) > 0)
+      .sort((a, b) => (b.totalPoints ?? 0) - (a.totalPoints ?? 0));
+
+    if (allMembers.length === 0) return { first: [], second: [], third: [] };
+
+    // 점수별로 그룹화
+    const groups: (typeof allMembers)[] = [];
+    let currentPoints: number | null = null;
+    let currentGroup: typeof allMembers = [];
+
+    for (const member of allMembers) {
+      const points = member.totalPoints ?? 0;
+      if (currentPoints === null || points === currentPoints) {
+        currentGroup.push(member);
+        currentPoints = points;
+      } else {
+        groups.push(currentGroup);
+        currentGroup = [member];
+        currentPoints = points;
+      }
+    }
+    if (currentGroup.length > 0) {
+      groups.push(currentGroup);
+    }
+
+    return {
+      first: groups[0] ?? [],
+      second: groups[1] ?? [],
+      third: groups[2] ?? [],
+    };
+  }, [youth, student]);
 
   // 출석/지각/결석
   async function handleCheckAttendance(memberId: string, status: "PRESENT" | "LATE") {
@@ -81,6 +118,34 @@ export function MembersBoard() {
         }
       } else {
         alert("결석 처리 실패");
+      }
+    }
+  }
+
+  async function handleAddBonusPoints(memberId: string, points: number, reason: string) {
+    if (loading) return;
+
+    if (!admin.isAdmin) {
+      setLoginErr("보너스 점수 입력은 관리자 인증이 필요합니다.");
+      setLoginOpen(true);
+      return;
+    }
+
+    try {
+      await addBonusPoints(memberId, points, reason);
+      await Promise.all([refreshAll(), refreshAdminMe()]);
+      if (openMemberId === memberId) await handleOpenMemberModal(memberId);
+      setToast(`${points}점이 추가되었습니다.`);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setLoginErr("관리자 인증이 필요합니다.");
+          setLoginOpen(true);
+        } else {
+          alert(err.message);
+        }
+      } else {
+        alert("보너스 점수 추가 실패");
       }
     }
   }
@@ -187,80 +252,100 @@ export function MembersBoard() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-neutral-900">
-      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-        <header className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-xl font-semibold">출석부</h1>
-              <p className="text-sm text-neutral-600">
-                {stats ? `오늘(${stats.todayYmd}) 출석(지각 포함): ${stats.todayCount}명` : "로딩 중..."}
-              </p>
-            </div>
-
-            <div className="flex flex-col items-start gap-2 md:items-end">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={[
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold",
-                    admin.isAdmin ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-neutral-50 text-neutral-600 border-neutral-200",
-                  ].join(" ")}
-                >
-                  관리자: {admin.isAdmin ? "인증됨" : "미인증"}
-                  {admin.isAdmin && <span className="text-neutral-500">({adminLeftText})</span>}
-                </span>
-
-                {!admin.isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenLoginModal()}
-                    className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100"
-                  >
-                    관리자 로그인
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={handleOpenCreateMember}
-                      className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
-                    >
-                      멤버 추가
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={handleLogout}
-                      className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
-                    >
-                      로그아웃
-                    </button>
-                  </>
-                )}
+    <div className="relative min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 text-neutral-900 transition-all duration-500">
+      <div className="relative mx-auto max-w-7xl space-y-4 px-4 py-4 z-10">
+        <header className="rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm shadow-xl p-5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+              📋 출석부
+            </h1>
+            {stats && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-sm shadow-sm">
+                <span className="text-xs">✅</span>
+                <span>오늘 {stats.todayCount}명</span>
               </div>
+            )}
+          </div>
 
-              <div className="text-sm text-neutral-700">
-                {stats && (
-                  <div className="flex flex-wrap gap-x-6 gap-y-1">
-                    <span>이번달 평균: {stats.month.avgAttendance.toFixed(1)}명</span>
-                    <span>전체 평균: {stats.all.avgAttendance.toFixed(1)}명</span>
-                    <span className="text-neutral-500">
-                      (이번달 모임 수 {stats.month.performedDays}회 · 전체 모임 수 {stats.all.performedDays}회)
-                    </span>
-                  </div>
-                )}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="flex items-center gap-2 bg-blue-50/80 rounded-lg px-3 py-2">
+              <span className="text-lg">👥</span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-600">이번달 평균</div>
+                <div className="text-lg font-bold text-blue-700">
+                  {stats ? `${stats.month.avgAttendance.toFixed(1)}명` : "-"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-purple-50/80 rounded-lg px-3 py-2">
+              <span className="text-lg">📊</span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-600">전체 평균</div>
+                <div className="text-lg font-bold text-purple-700">
+                  {stats ? `${stats.all.avgAttendance.toFixed(1)}명` : "-"}
+                </div>
               </div>
             </div>
           </div>
+
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${admin.isAdmin ? "bg-blue-50 border border-blue-300" : "bg-gray-50 border border-gray-300"} transition-all duration-300`}>
+              <span className="text-sm font-medium text-gray-700">관리자:</span>
+              <span className={`font-bold text-sm ${admin.isAdmin ? "text-blue-700" : "text-gray-600"}`}>
+                {admin.isAdmin ? (
+                  <>
+                    ✅ 인증됨
+                    {adminLeftText && <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">{adminLeftText}</span>}
+                  </>
+                ) : (
+                  "⏳ 미인증"
+                )}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!admin.isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => handleOpenLoginModal()}
+                  className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                >
+                  🔐 로그인
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleOpenCreateMember}
+                    className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    ➕ 추가
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleLogout}
+                    className="rounded-xl border-2 border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    🚪 로그아웃
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </header>
+
+        <RankingPodium rankedGroups={rankedGroups} onOpen={handleOpenMemberModal} />
 
         <MemberSection
           title="청년회"
           subtitle="20세 이상"
           members={youth}
           loading={loading}
+          isAdmin={admin.isAdmin}
           onCheck={handleCheckAttendance}
+          onAddBonusPoints={handleAddBonusPoints}
           onAbsent={handleMarkAbsent}
           onOpen={handleOpenMemberModal}
         />
@@ -270,10 +355,14 @@ export function MembersBoard() {
           subtitle="20세 미만"
           members={student}
           loading={loading}
+          isAdmin={admin.isAdmin}
           onCheck={handleCheckAttendance}
+          onAddBonusPoints={handleAddBonusPoints}
           onAbsent={handleMarkAbsent}
           onOpen={handleOpenMemberModal}
         />
+
+        <BirthdaySection members={[...youth, ...student]} onOpen={handleOpenMemberModal} />
 
         {/* 상세 모달 */}
         {openMemberId && (
