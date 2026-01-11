@@ -267,17 +267,34 @@ export async function listRooms(): Promise<RoomInfo[]> {
   const inactiveRoomIds: string[] = [];
   const now = Date.now();
   const ONE_HOUR_MS = 60 * 60 * 1000; // 1시간
+  const GRACE_PERIOD_MS = 30 * 1000; // 30초 - 방 생성 직후 삭제 방지
 
   for (const room of rooms) {
     const state = room.stateJson as unknown as GameState;
     const playerCount = (state.players ?? []).length;
     const phase = state.phase ?? "LOBBY";
     const updatedAtMs = room.updatedAt.getTime();
+    const createdAtMs = room.createdAt.getTime();
     const timeSinceUpdate = now - updatedAtMs;
+    const timeSinceCreation = now - createdAtMs;
 
     if (playerCount === 0) {
-      // 빈 방은 삭제 대상으로 표시
-      emptyRoomIds.push(String(room.id));
+      // 빈 방이지만, 생성된 지 30초 이내면 삭제하지 않음 (플레이어 참가 대기 시간)
+      if (timeSinceCreation >= GRACE_PERIOD_MS) {
+        // 빈 방은 삭제 대상으로 표시
+        emptyRoomIds.push(String(room.id));
+      } else {
+        // 최근 생성된 빈 방은 목록에 포함 (플레이어가 곧 참가할 수 있음)
+        const roomInfo: RoomInfo = {
+          id: String(room.id),
+          name: room.name ?? null,
+          phase,
+          playerCount,
+          createdAt: room.createdAt,
+          updatedAt: room.updatedAt,
+        };
+        roomInfos.push(roomInfo);
+      }
     } else {
       // 멤버는 있지만 게임이 진행 중이 아니고 1시간 이상 지난 방 삭제
       const isInactive = (phase === "LOBBY" || phase === "PREP" || phase === "GAME_OVER") && timeSinceUpdate >= ONE_HOUR_MS;
