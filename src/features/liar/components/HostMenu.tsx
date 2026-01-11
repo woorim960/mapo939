@@ -115,7 +115,7 @@ export function HostMenu({
         <div className="grid grid-cols-3 gap-3">
           <label className="space-y-2">
             <div className="text-xs font-semibold text-red-700 flex items-center gap-1">
-              <span>🕵️</span>
+              <span>🎭</span>
               <span>라이어</span>
             </div>
             <input
@@ -133,7 +133,7 @@ export function HostMenu({
 
           <label className="space-y-2">
             <div className="text-xs font-semibold text-orange-700 flex items-center gap-1">
-              <span>🎭</span>
+              <span>🤡</span>
               <span>트롤</span>
             </div>
             <input

@@ -139,7 +139,7 @@ export function PlayerList({
                 )}
                 {isDeadTroll && !compact && (
                   <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-red-500 to-orange-500 text-white text-xs font-bold shadow-md">
-                    🎭 트롤
+                    🤡 트롤
                   </span>
                 )}
                 <span

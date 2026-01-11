@@ -41,7 +41,7 @@ export function MemberCard({ member, loading, isAdmin, onCheck, onAddBonusPoints
   }
 
   return (
-    <div className="group w-[280px] shrink-0 rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm p-4 shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all duration-200">
+    <div className="group w-[280px] shrink-0 rounded-2xl border-2 border-white/50 bg-white/80 backdrop-blur-sm p-3 md:p-4 shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all duration-200">
       <div
         role="button"
         tabIndex={0}
@@ -52,40 +52,76 @@ export function MemberCard({ member, loading, isAdmin, onCheck, onAddBonusPoints
         className="w-full cursor-pointer text-left select-none"
         style={{ WebkitTapHighlightColor: "transparent" }}
       >
-        <div className="relative mb-4">
-          <div className="h-40 w-full overflow-hidden rounded-xl border-2 border-white shadow-lg">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
-          </div>
+        {/* 작은 화면: 컴팩트 레이아웃 */}
+        <div className="md:hidden">
+          <div className="flex items-start gap-3 mb-2">
+            {/* 프로필 이미지 */}
+            <div className="relative flex-shrink-0">
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-md">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={member.photoUrl} alt="" className="w-full h-full object-cover" />
+              </div>
+              <div
+                className={[
+                  "absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-md",
+                  badgeTone(member.todayStatus),
+                ].join(" ")}
+              >
+                {todayLabel(member.todayStatus) === "출석" ? "✓" : todayLabel(member.todayStatus) === "지각" ? "⏰" : "○"}
+              </div>
+            </div>
 
-          <div
-            className={[
-              "absolute right-2 top-2 rounded-full px-2.5 py-1 text-xs font-bold shadow-md backdrop-blur-sm",
-              badgeTone(member.todayStatus),
-            ].join(" ")}
-          >
-            {todayLabel(member.todayStatus)}
-          </div>
-
-          <div className="absolute -bottom-4 left-3 h-12 w-12 overflow-hidden rounded-full border-2 border-white shadow-lg bg-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+            {/* 이름 및 정보 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-bold text-gray-800 mb-1 break-words">{member.name}</div>
+              <div className="text-xs text-gray-600 mb-2">
+                {member.age}세 · {fmtYmd(member.birthDate)}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Pill label="출석 포인트" value={`${(member.totalPoints ?? 0).toLocaleString()}P`} icon="star" />
+                <Pill label="올해 출석" value={`${member.yearAttendanceCount}회`} icon="check" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="mt-8">
-          <div className="text-lg font-bold text-gray-800 mb-1">{member.name}</div>
-          <div className="text-xs text-gray-600 mb-3">
-            {member.age}세 · {fmtYmd(member.birthDate)}
+        {/* 데스크톱: 기존 레이아웃 */}
+        <div className="hidden md:block">
+          <div className="relative mb-4">
+            <div className="h-40 w-full overflow-hidden rounded-xl border-2 border-white shadow-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+            </div>
+
+            <div
+              className={[
+                "absolute right-2 top-2 rounded-full px-2.5 py-1 text-xs font-bold shadow-md backdrop-blur-sm",
+                badgeTone(member.todayStatus),
+              ].join(" ")}
+            >
+              {todayLabel(member.todayStatus)}
+            </div>
+
+            <div className="absolute -bottom-4 left-3 h-12 w-12 overflow-hidden rounded-full border-2 border-white shadow-lg bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Pill label="출석 포인트" value={`${(member.totalPoints ?? 0).toLocaleString()}P`} icon="star" />
-            <Pill label="올해 출석" value={`${member.yearAttendanceCount}회`} icon="check" />
+
+          <div className="mt-8">
+            <div className="text-lg font-bold text-gray-800 mb-1">{member.name}</div>
+            <div className="text-xs text-gray-600 mb-3">
+              {member.age}세 · {fmtYmd(member.birthDate)}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Pill label="출석 포인트" value={`${(member.totalPoints ?? 0).toLocaleString()}P`} icon="star" />
+              <Pill label="올해 출석" value={`${member.yearAttendanceCount}회`} icon="check" />
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-2 md:mt-4 space-y-2">
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"

@@ -30,7 +30,7 @@ export function HowToModal({ open, onClose }: HowToModalProps) {
     >
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="text-sm font-bold">🕵️‍♂️ 라이어 게임 방법</div>
+          <div className="text-sm font-bold">🎭 라이어 게임 방법</div>
           <button className="text-xs underline text-gray-600" onClick={onClose}>
             닫기
           </button>

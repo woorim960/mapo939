@@ -13,6 +13,7 @@ import { RankingPodium } from "./RankingPodium";
 import { MemberModal } from "./MemberModal";
 import { MemberForm } from "./MemberForm";
 import { LoginModal } from "./LoginModal";
+import { GameMenuButton } from "./GameMenuButton";
 import { Toast } from "@/shared/components/Toast";
 import type { Member, MemberStats } from "../types";
 
@@ -400,6 +401,9 @@ export function MembersBoard() {
 
         {/* 토스트 */}
         {toast && <Toast message={toast} onClose={() => setToast("")} />}
+
+        {/* 게임 메뉴 플로팅 버튼 */}
+        <GameMenuButton />
       </div>
     </div>
   );

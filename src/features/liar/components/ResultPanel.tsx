@@ -37,7 +37,7 @@ export function ResultPanel({
             "w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg",
             lastEliminatedWasTroll ? "bg-gradient-to-br from-orange-400 to-red-500" : "bg-gradient-to-br from-gray-400 to-slate-500",
           ].join(" ")}>
-            {lastEliminatedWasTroll ? "🎭" : "💀"}
+            {lastEliminatedWasTroll ? "🤡" : "💀"}
           </div>
           <div className="flex-1">
             <div className="text-xs text-gray-600 mb-1">탈락자</div>
@@ -54,9 +54,9 @@ export function ResultPanel({
                   : "bg-blue-200 text-blue-800",
               ].join(" ")}>
                 {lastEliminatedRole === "TROLL" 
-                  ? "🎭 트롤" 
+                  ? "🤡 트롤" 
                   : lastEliminatedRole === "LIAR"
-                  ? "🕵️ 라이어"
+                  ? "🎭 라이어"
                   : "👥 관객"}
               </div>
             )}

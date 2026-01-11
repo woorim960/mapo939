@@ -19,6 +19,7 @@ import { ResultPanel } from "@/features/liar/components/ResultPanel";
 import { GameOverPanel } from "@/features/liar/components/GameOverPanel";
 import { FinalChampionOverlay } from "@/features/liar/components/FinalChampionOverlay";
 import { HowToModal } from "@/features/liar/components/HowToModal";
+import { MenuButton } from "@/features/liar/components/MenuButton";
 import { Toast } from "@/shared/components/Toast";
 import { phaseLabel, roleLabel, canJoinNow, defaultRoleCounts, getPhaseTheme } from "@/features/liar/utils";
 import { remainingMs } from "@/shared/utils/date";
@@ -355,6 +356,20 @@ export default function LiarPage() {
             <GameOverPanel winnerNames={winnerNames} championName={championName} />
           )}
       </div>
+
+      {/* 플로팅 메뉴 버튼 */}
+      <MenuButton
+        items={[
+          {
+            id: "attendance",
+            name: "출석부",
+            emoji: "📋",
+            path: "/",
+          },
+        ]}
+        buttonEmoji="🎮"
+        buttonGradient="from-purple-500 to-pink-500"
+      />
     </main>
   );
 }
