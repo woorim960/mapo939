@@ -590,6 +590,12 @@ export default function LiarPage() {
             path: "/",
           },
           {
+            id: "watermelon",
+            name: "수박게임",
+            emoji: "🍉",
+            path: "/watermelon",
+          },
+          {
             id: "rooms",
             name: "방 목록",
             emoji: "🏠",

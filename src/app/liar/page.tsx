@@ -215,6 +215,12 @@ function LiarRoomsPageContent() {
             emoji: "📋",
             path: "/",
           },
+          {
+            id: "watermelon",
+            name: "수박게임",
+            emoji: "🍉",
+            path: "/watermelon",
+          },
         ]}
         buttonEmoji="🎮"
         buttonGradient="from-purple-500 to-pink-500"

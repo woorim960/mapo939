@@ -33,8 +33,8 @@ model Member {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  attendances  Attendance[]
-  bonusPoints  BonusPoints[]
+  attendances Attendance[]
+  bonusPoints BonusPoints[]
 
   @@index([isActive, birthDate])
   @@map("members")
@@ -112,4 +112,31 @@ model LiarPlayer {
   @@unique([gameId, nickname])
   @@index([gameId])
   @@index([gameId, score])
+}
+
+model WatermelonPlayer {
+  id        String   @id @default(uuid())
+  nickname  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scores WatermelonScore[]
+
+  @@map("watermelon_players")
+}
+
+model WatermelonScore {
+  id        String   @id @default(uuid())
+  playerId  String
+  score     Int
+  maxTier   Int?     // 최대 과일 레벨
+  createdAt DateTime @default(now())
+
+  player WatermelonPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([playerId, score])
+  @@index([score])
+  @@index([createdAt])
+  @@map("watermelon_scores")
 }
