@@ -109,7 +109,7 @@ export async function POST(req: Request): Promise<Response> {
         version: (state.version ?? 0) + 1,
         round: {
           ...round,
-          tieDiscussEndsAt: Date.now() + 60_000,
+          tieDiscussEndsAt: Date.now() + 180_000, // 3분
           votesByVoterId: {},
         },
       };
@@ -193,29 +193,32 @@ export async function POST(req: Request): Promise<Response> {
       // ✅ 300점 달성자가 없으면 게임 계속 진행 여부 확인
       const aliveCount = nextPlayers.filter(p => p.isAlive).length;
       
-      // ✅ 생존자가 3명 이상이면 다음 라운드로 자동 진행 (PREP phase)
+      // ✅ 생존자가 3명 이상이면 재논의 단계로 전환 (TIE_DISCUSS phase)
+      // 재논의 후 자동으로 투표로 전환되거나 방장이 투표 시작 버튼을 눌러야 함
       if (aliveCount >= 3) {
-        const nextPrep: GameState = {
+        const nextTieDiscuss: GameState = {
           ...state,
           players: nextPlayers,
           lastEliminatedPlayerId: eliminatedId,
           lastEliminatedWasTroll,
           lastEliminatedRole: eliminatedRole,
           version: (state.version ?? 0) + 1,
-          phase: "PREP",
+          phase: "TIE_DISCUSS",
           round: {
             ...round,
+            tieDiscussEndsAt: Date.now() + 180_000, // 3분
+            votesByVoterId: {},
             trollDeathRewarded: lastEliminatedWasTroll ? true : trollDeathRewarded,
           },
         };
 
-        const r = await updateGameCAS(dbVersion, nextPrep);
+        const r = await updateGameCAS(dbVersion, nextTieDiscuss);
         if (!r.ok) continue;
 
         return NextResponse.json({
           ok: true,
           eliminatedId,
-          movedTo: "PREP",
+          movedTo: "TIE_DISCUSS",
           aliveAudience,
           aliveLiar,
           aliveTroll,
