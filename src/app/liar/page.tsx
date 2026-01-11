@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listRooms, createRoom, type RoomInfo } from "@/features/liar/api";
 import { MenuButton } from "@/features/liar/components/MenuButton";
@@ -46,11 +46,7 @@ function LiarRoomsPageContent() {
       setShowRoomDeletedToast(true);
       // URL에서 쿼리 파라미터 제거
       router.replace("/liar", { scroll: false });
-      // 5초 후 토스트 숨기기
-      const timer = setTimeout(() => {
-        setShowRoomDeletedToast(false);
-      }, 5000);
-      return () => clearTimeout(timer);
+      // Toast 컴포넌트의 duration prop으로 자동으로 5초 후 사라짐
     }
   }, [searchParams, router]);
 
@@ -93,13 +89,17 @@ function LiarRoomsPageContent() {
     router.push(`/liar/${roomId}`);
   }
 
+  const handleCloseRoomDeletedToast = useCallback(() => {
+    setShowRoomDeletedToast(false);
+  }, []);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 p-4">
       {/* 방 폭파 메시지 토스트 */}
       {showRoomDeletedToast && (
         <Toast 
           message="방장이 방을 폭파시켰습니다." 
-          onClose={() => setShowRoomDeletedToast(false)}
+          onClose={handleCloseRoomDeletedToast}
           duration={5000}
           variant="error"
         />

@@ -48,26 +48,18 @@ export function roleLabel(role: Role | null): string {
 export function msgFromErrorCode(code?: string, message?: string): string {
   // 서버에서 제공한 메시지가 있으면 우선 사용
   if (message) return message;
-
+  
   switch (code) {
     case "invalid_input":
       return "입력값을 확인해주세요";
-    case "nickname_required":
-      return "닉네임을 입력해주세요";
-    case "nickname_too_short":
-      return "닉네임은 최소 1자 이상이어야 합니다";
-    case "nickname_too_long":
-      return "닉네임은 20자 이하여야 합니다";
-    case "nickname_invalid":
-      return "닉네임은 공백만으로 구성될 수 없습니다";
-    case "nickname_taken":
-      return "이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해주세요.";
     case "room_not_found":
       return "방이 존재하지 않거나 삭제되었습니다";
     case "only_host":
       return "방장만 가능한 기능입니다";
     case "not_enough_players":
       return "인원이 부족합니다";
+    case "nickname_taken":
+      return "이미 사용 중인 닉네임입니다";
     case "not_in_game":
       return "게임에 참가하지 않았습니다";
     case "not_alive":
@@ -85,7 +77,7 @@ export function msgFromErrorCode(code?: string, message?: string): string {
     case "not_result_phase":
       return "아직 결과 단계가 아닙니다";
     case "concurrent_update":
-      return "다른 사용자가 동시에 변경했습니다. 잠시 후 다시 시도해주세요";
+      return "잠시 후 다시 시도해주세요";
     case "not_allowed_phase":
       return "지금은 사용할 수 없습니다";
     default:

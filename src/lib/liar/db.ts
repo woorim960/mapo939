@@ -81,6 +81,16 @@ export async function getOrCreateGame(roomId: string): Promise<{ state: GameStat
   
   if (row) {
     const state = row.stateJson as unknown as GameState;
+    // roomDeleted 플래그가 있으면 방이 삭제된 것으로 간주
+    if ((state as any).roomDeleted) {
+      // 방이 삭제되었지만 아직 DB에 남아있는 경우, 삭제된 상태로 반환
+      return { 
+        state: { ...state, version: row.version }, 
+        dbVersion: row.version,
+        roomName: row.name ?? null,
+        roomCreatedAt: row.createdAt ? row.createdAt.getTime() : null
+      };
+    }
     return { 
       state: { ...state, version: row.version }, 
       dbVersion: row.version,
@@ -89,12 +99,20 @@ export async function getOrCreateGame(roomId: string): Promise<{ state: GameStat
     };
   }
 
-  // 방이 정말 없을 때만 새로 생성 (하지만 이는 매우 드문 경우)
-  // 실제로는 방이 이미 존재해야 하므로, 한 번 더 확인
+  // 방이 정말 없을 때, 한 번 더 확인 (트랜잭션 커밋 대기)
   await new Promise(resolve => setTimeout(resolve, 200));
   const finalCheck = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true, createdAt: true } });
   if (finalCheck) {
     const state = finalCheck.stateJson as unknown as GameState;
+    // roomDeleted 플래그 확인
+    if ((state as any).roomDeleted) {
+      return { 
+        state: { ...state, version: finalCheck.version }, 
+        dbVersion: finalCheck.version,
+        roomName: finalCheck.name ?? null,
+        roomCreatedAt: finalCheck.createdAt ? finalCheck.createdAt.getTime() : null
+      };
+    }
     return { 
       state: { ...state, version: finalCheck.version }, 
       dbVersion: finalCheck.version,
@@ -103,52 +121,10 @@ export async function getOrCreateGame(roomId: string): Promise<{ state: GameStat
     };
   }
 
-  // 정말 방이 없을 때만 새로 생성 (이 경우는 거의 발생하지 않아야 함)
-  // ⚠️ 주의: 이 경우 name을 null로 생성하지만, 실제로는 방이 이미 존재해야 함
-  // 방이 이미 존재하는데 찾지 못한 경우이므로, 다시 한 번 확인
-  console.warn("[getOrCreateGame] Room not found, attempting to create (this should be rare):", roomId);
-  
-  const initial = createInitialGameState();
-
-  try {
-    await p.liarGame.create({
-      data: { 
-        id: roomId, 
-        name: null, // ⚠️ 새로 생성하는 경우이므로 name은 null
-        version: 0, 
-        stateJson: initial as unknown as object 
-      },
-    });
-    console.warn("[getOrCreateGame] Created new room with null name (this should not happen if room already exists):", roomId);
-  } catch (err) {
-    // 생성 실패 시 다시 조회 (다른 요청에서 이미 생성했을 수 있음)
-    const again = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true, createdAt: true } });
-    if (!again) {
-      console.error("[getOrCreateGame] Failed to create or load LiarGame:", err);
-      throw new Error("Failed to create or load LiarGame");
-    }
-    const state = again.stateJson as unknown as GameState;
-    return { 
-      state: { ...state, version: again.version }, 
-      dbVersion: again.version,
-      roomName: again.name ?? null,
-      roomCreatedAt: again.createdAt ? again.createdAt.getTime() : null
-    };
-  }
-
-  // 생성 후 실제 저장된 데이터 반환 (트랜잭션 일관성 보장)
-  const created = await p.liarGame.findUnique({ where: { id: roomId }, select: { name: true, version: true, stateJson: true, createdAt: true } });
-  if (created) {
-    const state = created.stateJson as unknown as GameState;
-    return { 
-      state: { ...state, version: created.version }, 
-      dbVersion: created.version,
-      roomName: created.name ?? null,
-      roomCreatedAt: created.createdAt ? created.createdAt.getTime() : null
-    };
-  }
-
-  return { state: initial, dbVersion: 0, roomName: null, roomCreatedAt: null };
+  // ⚠️ 방이 없을 때 새로 생성하지 않음 (방 폭파 후 제목 없는 방 생성 방지)
+  // 대신 에러를 던져서 호출자가 처리하도록 함
+  console.error("[getOrCreateGame] Room not found and should not create new room:", roomId);
+  throw new Error(`Room not found: ${roomId}`);
 }
 
 export async function getGame(roomId: string): Promise<{ state: GameState; dbVersion: number } | null> {

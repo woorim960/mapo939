@@ -64,9 +64,14 @@ export function handleUnknownError(err: unknown): string {
 
 /**
  * 에러 로깅 (개발 환경에서만)
+ * room_not_found 같은 예상된 에러는 로깅하지 않음
  */
 export function logError(context: string, err: unknown): void {
   if (process.env.NODE_ENV === "development") {
+    // room_not_found 같은 예상된 에러는 로깅하지 않음 (polling 중 정상적으로 발생할 수 있음)
+    if (err instanceof ApiError && (err.code === "room_not_found" || err.status === 404)) {
+      return;
+    }
     console.error(`[${context}]`, err);
   }
   // 프로덕션에서는 Sentry 등으로 전송 가능

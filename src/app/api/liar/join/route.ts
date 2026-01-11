@@ -66,7 +66,22 @@ export async function POST(req: Request): Promise<Response> {
 
   // 게임 state에 참가자로 추가 (CAS로 충돌 처리)
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame(roomId);
+    let state: GameState;
+    let dbVersion: number;
+    try {
+      const result = await getOrCreateGame(roomId);
+      state = result.state;
+      dbVersion = result.dbVersion;
+    } catch (err) {
+      // 방이 없으면 404 반환
+      if (err instanceof Error && err.message.includes("Room not found")) {
+        return NextResponse.json({ 
+          error: "room_not_found", 
+          message: "방이 존재하지 않거나 삭제되었습니다." 
+        }, { status: 404 });
+      }
+      continue;
+    }
     const next = addPlayerToState(state, playerId, nickname);
 
     const res = await updateGameCAS(roomId, dbVersion, next);

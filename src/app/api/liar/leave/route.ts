@@ -57,7 +57,19 @@ export async function POST(req: Request): Promise<Response> {
 
   // 게임 상태에서 플레이어 제거 (CAS로 충돌 처리)
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion } = await getOrCreateGame(roomId);
+    let state: GameState;
+    let dbVersion: number;
+    try {
+      const result = await getOrCreateGame(roomId);
+      state = result.state;
+      dbVersion = result.dbVersion;
+    } catch (err) {
+      // 방이 없으면 성공으로 처리 (이미 삭제된 방)
+      if (err instanceof Error && err.message.includes("Room not found")) {
+        return NextResponse.json({ ok: true });
+      }
+      continue;
+    }
     
     // 플레이어가 게임 상태에 없으면 이미 나간 상태
     const playerExists = state.players?.some(p => p.playerId === playerId);

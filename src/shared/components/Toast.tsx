@@ -15,11 +15,22 @@ export function Toast({ message, onClose, duration = 1000, variant = "success" }
   useEffect(() => {
     if (message) {
       setIsVisible(true);
-      const timer = setTimeout(() => {
+      // duration 후에 토스트를 숨김
+      const hideTimer = setTimeout(() => {
         setIsVisible(false);
-        setTimeout(onClose, 300);
       }, duration);
-      return () => clearTimeout(timer);
+      
+      // duration + 300ms 후에 onClose 호출 (fade-out 애니메이션 시간 고려)
+      const closeTimer = setTimeout(() => {
+        onClose();
+      }, duration + 300);
+      
+      return () => {
+        clearTimeout(hideTimer);
+        clearTimeout(closeTimer);
+      };
+    } else {
+      setIsVisible(false);
     }
   }, [message, onClose, duration]);
 

@@ -5,6 +5,7 @@ import { fetchGameState, fetchMe } from "../api";
 import { getLS, setLS, removeLS } from "../utils";
 import { uuid } from "@/shared/utils/uuid";
 import { setLS as setLSShared, removeLS as removeLSShared } from "@/shared/utils/storage";
+import { ApiError } from "@/shared/utils/error";
 import type { PublicState, MeState } from "../types";
 
 export function useLiarGame(roomId: string) {
@@ -112,8 +113,12 @@ export function useLiarGame(roomId: string) {
           updateJoinedStateFromPublicState(state, playerId, savedNick);
         }
       } catch (err) {
-        // 방이 삭제된 경우 404 에러가 발생할 수 있음
-        if (err instanceof Error && (err.message.includes("404") || err.message.includes("room_not_found"))) {
+        // 방이 삭제된 경우 404 에러나 ApiError가 발생할 수 있음
+        const isRoomNotFound = 
+          (err instanceof Error && (err.message.includes("404") || err.message.includes("room_not_found"))) ||
+          (err instanceof ApiError && (err.status === 404 || err.code === "room_not_found"));
+        
+        if (isRoomNotFound) {
           // 방이 삭제되었음을 표시하기 위해 roomDeleted 플래그 설정
           setPublicState((prev) => prev ? { ...prev, roomDeleted: true } : {
             version: 0,

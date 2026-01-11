@@ -81,7 +81,18 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // ✅ 먼저 게임 상태 확인
-  const { state } = await getOrCreateGame(roomId);
+  let state: GameState;
+  try {
+    const result = await getOrCreateGame(roomId);
+    state = result.state;
+  } catch (err) {
+    // 방이 없으면 404 반환
+    if (err instanceof Error && err.message.includes("Room not found")) {
+      return NextResponse.json({ error: "room_not_found", message: "방이 존재하지 않거나 삭제되었습니다" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
+  
   const phase = state.phase ?? "LOBBY";
   const canJoinNow = phase === "LOBBY" || phase === "PREP";
 
@@ -105,7 +116,18 @@ export async function POST(req: Request): Promise<Response> {
     if (player) {
       // DB에 있으면 게임 상태에 추가
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const { state: currentState, dbVersion } = await getOrCreateGame(roomId);
+        let currentState: GameState;
+        let dbVersion: number;
+        try {
+          const result = await getOrCreateGame(roomId);
+          currentState = result.state;
+          dbVersion = result.dbVersion;
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("Room not found")) {
+            return NextResponse.json({ error: "room_not_found", message: "방이 존재하지 않거나 삭제되었습니다" }, { status: 404 });
+          }
+          continue;
+        }
         const next = addPlayerIfMissing(currentState, playerId, player.nickname);
 
         if (next === currentState) {
@@ -135,7 +157,18 @@ export async function POST(req: Request): Promise<Response> {
 
   // state에 없으면 복구(addPlayerIfMissing) + CAS
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state: currentState, dbVersion } = await getOrCreateGame(roomId);
+    let currentState: GameState;
+    let dbVersion: number;
+    try {
+      const result = await getOrCreateGame(roomId);
+      currentState = result.state;
+      dbVersion = result.dbVersion;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Room not found")) {
+        return NextResponse.json({ error: "room_not_found", message: "방이 존재하지 않거나 삭제되었습니다" }, { status: 404 });
+      }
+      continue;
+    }
     const next = addPlayerIfMissing(currentState, playerId, player.nickname);
 
     if (next === currentState) {

@@ -25,7 +25,25 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { state, dbVersion, roomName, roomCreatedAt } = await getOrCreateGame(roomId);
+    let state: GameState;
+    let dbVersion: number;
+    let roomName: string | null;
+    let roomCreatedAt: number | null;
+    
+    try {
+      const result = await getOrCreateGame(roomId);
+      state = result.state;
+      dbVersion = result.dbVersion;
+      roomName = result.roomName;
+      roomCreatedAt = result.roomCreatedAt;
+    } catch (err) {
+      // 방이 없으면 404 반환 (방이 삭제된 것으로 간주)
+      if (err instanceof Error && err.message.includes("Room not found")) {
+        return NextResponse.json({ error: "room_not_found", message: "방이 존재하지 않거나 삭제되었습니다" }, { status: 404 });
+      }
+      // 다른 에러는 재시도
+      continue;
+    }
     const ids = (state.players ?? []).map(p => p.playerId);
 
     // 점수는 매번 DB에서 (방별로)
@@ -99,8 +117,16 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   // CAS 충돌 fallback
-  const { state, roomName, roomCreatedAt } = await getOrCreateGame(roomId);
-  const ids = (state.players ?? []).map(p => p.playerId);
-  const scoreMap = await buildScoreMap(ids, roomId);
-  return NextResponse.json(toPublicState(state, scoreMap, roomName, roomCreatedAt));
+  try {
+    const { state, roomName, roomCreatedAt } = await getOrCreateGame(roomId);
+    const ids = (state.players ?? []).map(p => p.playerId);
+    const scoreMap = await buildScoreMap(ids, roomId);
+    return NextResponse.json(toPublicState(state, scoreMap, roomName, roomCreatedAt));
+  } catch (err) {
+    // 방이 없으면 404 반환
+    if (err instanceof Error && err.message.includes("Room not found")) {
+      return NextResponse.json({ error: "room_not_found", message: "방이 존재하지 않거나 삭제되었습니다" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
 }
