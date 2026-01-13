@@ -178,10 +178,20 @@ export function GameCanvas({
     ctx.textBaseline = "middle";
     ctx.fillText("⚠️ 게임 오버 라인", canvasWidth / 2, gameOverLineY - textOffset);
 
-    // 과일 렌더링
-    currentFruits.forEach((fruit) => {
-      if (!fruit.alive) return;
+    // 과일 렌더링 (아래에 있는 과일부터 그려서 z-order 문제 해결)
+    // 모바일에서 새로 떨어지는 과일이 뒤로 가려지는 문제 해결
+    const sortedFruits = [...currentFruits]
+      .filter((fruit) => fruit.alive)
+      .sort((a, b) => {
+        // Y 좌표가 큰 것(아래에 있는 것)부터 먼저 그리기
+        // 같은 Y 좌표면 X 좌표로 정렬
+        if (Math.abs(a.y - b.y) > 1) {
+          return b.y - a.y;
+        }
+        return a.x - b.x;
+      });
 
+    sortedFruits.forEach((fruit) => {
       const config = FRUIT_CONFIGS[fruit.tier];
       const pos = { x: fruit.x, y: fruit.y };
 

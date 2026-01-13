@@ -121,7 +121,10 @@ model WatermelonPlayer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  scores WatermelonScore[]
+  scores    WatermelonScore[]
+  items     WatermelonPlayerItem[]
+  payments  WatermelonPayment[]
+  purchases WatermelonItemPurchase[]
 
   @@map("watermelon_players")
 }
@@ -130,7 +133,7 @@ model WatermelonScore {
   id        String   @id @default(uuid())
   playerId  String
   score     Int
-  maxTier   Int?     // 최대 과일 레벨
+  maxTier   Int? // 최대 과일 레벨
   createdAt DateTime @default(now())
 
   player WatermelonPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
@@ -140,4 +143,87 @@ model WatermelonScore {
   @@index([score])
   @@index([createdAt])
   @@map("watermelon_scores")
+}
+
+// 아이템 정의
+model WatermelonItem {
+  id          String   @id @default(uuid())
+  name        String // 아이템 이름
+  description String? // 설명
+  price       Int // 가격 (원)
+  effectType  String // 효과 타입 (예: "extra_life", "slow_gravity", "bonus_score", "remove_fruits")
+  effectValue Json? // 효과 값 (JSON)
+  icon        String? // 아이콘 이모지
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0) // 정렬 순서
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  playerItems WatermelonPlayerItem[]
+  purchases   WatermelonItemPurchase[]
+  payments    WatermelonPayment[]
+
+  @@index([isActive, sortOrder])
+  @@map("watermelon_items")
+}
+
+// 플레이어의 아이템 보유량
+model WatermelonPlayerItem {
+  id        String   @id @default(uuid())
+  playerId  String
+  itemId    String
+  quantity  Int      @default(0) // 보유 개수
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  player WatermelonPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item   WatermelonItem   @relation(fields: [itemId], references: [id])
+
+  @@unique([playerId, itemId])
+  @@index([playerId])
+  @@map("watermelon_player_items")
+}
+
+// 결제 내역
+model WatermelonPayment {
+  id            String   @id @default(uuid())
+  playerId      String
+  itemId        String?
+  amount        Int // 결제 금액
+  paymentMethod String // 결제 수단 ("toss", "card", "account" 등)
+  paymentKey    String? // 토스페이먼츠 결제 키
+  orderId       String? // 주문 ID
+  status        String // "pending", "completed", "failed", "refunded"
+  metadata      Json? // 추가 정보 (결제 상세 정보)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  player   WatermelonPlayer        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item     WatermelonItem?         @relation(fields: [itemId], references: [id])
+  purchase WatermelonItemPurchase?
+
+  @@unique([orderId])
+  @@index([playerId])
+  @@index([paymentKey])
+  @@index([status])
+  @@map("watermelon_payments")
+}
+
+// 아이템 구매 내역
+model WatermelonItemPurchase {
+  id        String   @id @default(uuid())
+  playerId  String
+  itemId    String
+  quantity  Int
+  paymentId String?  @unique // 결제 ID (1:1 관계)
+  createdAt DateTime @default(now())
+
+  player  WatermelonPlayer   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item    WatermelonItem     @relation(fields: [itemId], references: [id])
+  payment WatermelonPayment? @relation(fields: [paymentId], references: [id])
+
+  @@index([playerId])
+  @@index([itemId])
+  @@index([paymentId])
+  @@map("watermelon_item_purchases")
 }

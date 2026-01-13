@@ -15,6 +15,7 @@ import { StatsModal } from "@/features/watermelon/components/StatsModal";
 import { SaveConfirmModal } from "@/features/watermelon/components/SaveConfirmModal";
 import { LogoutConfirmModal } from "@/features/watermelon/components/LogoutConfirmModal";
 import { MenuButton } from "@/features/watermelon/components/MenuButton";
+import { ItemShopModal } from "@/features/watermelon/components/ItemShopModal";
 import { Toast } from "@/shared/components/Toast";
 import { createOrGetPlayer } from "@/features/watermelon/api";
 import { getLS, setLS, removeLS } from "@/shared/utils/storage";
@@ -38,6 +39,7 @@ export default function WatermelonPage() {
   const [playerStats, setPlayerStats] = useState<{ bestScore?: number; averageScore?: number; playCount?: number; averageMaxTier?: number } | null>(null);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [loadingPlayer, setLoadingPlayer] = useState(true);
+  const [nicknameModalError, setNicknameModalError] = useState<string>("");
 
   const game = useWatermelonGame(containerBounds, playerId || undefined);
   const [showHowTo, setShowHowTo] = useState(false);
@@ -45,6 +47,7 @@ export default function WatermelonPage() {
   const [showGameOver, setShowGameOver] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showItemShop, setShowItemShop] = useState(false);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [toast, setToast] = useState("");
   const [currentScoreTier, setCurrentScoreTier] = useState(0); // 현재 도달한 점수 단계
@@ -81,12 +84,14 @@ export default function WatermelonPage() {
         } catch (error: any) {
           console.error("Auto login failed:", error);
           // 자동 로그인 실패 시 모달 표시
-          setShowNicknameModal(true);
+          setNicknameModalError(""); // 모달 열 때 에러 초기화
+      setShowNicknameModal(true);
           setLoadingPlayer(false);
         }
       };
       autoLogin();
     } else {
+      setNicknameModalError(""); // 모달 열 때 에러 초기화
       setShowNicknameModal(true);
       setLoadingPlayer(false);
     }
@@ -122,6 +127,7 @@ export default function WatermelonPage() {
   const handleNicknameSubmit = async (nickname: string, password: string) => {
     try {
       setLoadingPlayer(true);
+      setNicknameModalError(""); // 에러 초기화
       const player = await createOrGetPlayer(nickname, password);
       setPlayerId(player.id);
       setPlayerNickname(player.nickname);
@@ -140,9 +146,13 @@ export default function WatermelonPage() {
       console.error("Failed to create/get player:", error);
       // ApiError의 경우 error.error 필드에 에러 코드가 있음
       if (error && (error.error === "invalid_password" || error.code === "invalid_password" || error.status === 401)) {
-        setToast("패스워드가 일치하지 않습니다. 다른 닉네임을 사용하거나 올바른 패스워드를 입력해주세요.");
+        const errorMessage = "패스워드가 일치하지 않습니다. 올바른 패스워드를 입력하거나 다른 닉네임을 사용해주세요.";
+        setNicknameModalError(errorMessage);
+        setToast(errorMessage);
       } else {
-        setToast("플레이어 생성에 실패했습니다. 다시 시도해주세요.");
+        const errorMessage = "플레이어 생성에 실패했습니다. 다시 시도해주세요.";
+        setNicknameModalError(errorMessage);
+        setToast(errorMessage);
       }
     } finally {
       setLoadingPlayer(false);
@@ -543,6 +553,7 @@ export default function WatermelonPage() {
           open={showNicknameModal}
           onSubmit={handleNicknameSubmit}
           initialNickname={playerNickname}
+          externalError={nicknameModalError}
         />
         {loadingPlayer && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-40">
@@ -730,6 +741,15 @@ export default function WatermelonPage() {
         <div className="flex-shrink-0 flex gap-3" data-control-buttons>
           <button
             type="button"
+            onClick={() => setShowItemShop(true)}
+            className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-3 text-base font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2"
+            title="아이템 상점"
+          >
+            <span className="text-lg">🛒</span>
+            <span className="hidden sm:inline">아이템</span>
+          </button>
+          <button
+            type="button"
             onClick={handleRestart}
             className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3 text-base font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2"
           >
@@ -749,6 +769,16 @@ export default function WatermelonPage() {
 
       {/* 게임 방법 모달 */}
       <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} />
+
+      {/* 아이템 상점 모달 */}
+      <ItemShopModal
+        open={showItemShop}
+        onClose={() => setShowItemShop(false)}
+        onPurchaseSuccess={() => {
+          setToast("아이템 구매가 완료되었습니다! 🎉");
+        }}
+        playerId={playerId || undefined}
+      />
 
       {/* 통계 모달 */}
       <StatsModal
@@ -792,7 +822,7 @@ export default function WatermelonPage() {
         <Toast
           message={toast}
           onClose={() => setToast("")}
-          duration={2000}
+          duration={3000}
           variant="success"
         />
       )}

@@ -90,18 +90,20 @@ export function GameOverModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-300"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-300"
+      style={{ height: '100dvh' }}
       onMouseDown={onRestart}
       role="dialog"
       aria-modal="true"
       aria-label="게임 오버"
     >
       <div
-        className="w-full max-w-md rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-xl shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 overflow-hidden"
+        className="w-full max-w-md rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-xl shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 overflow-hidden flex flex-col"
+        style={{ maxHeight: 'calc(100dvh - 1rem)' }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* 헤더 - 더 예쁘게 */}
-        <div className="relative bg-gradient-to-r from-red-500 via-pink-500 to-orange-500 px-6 py-5 overflow-hidden">
+        <div className="relative bg-gradient-to-r from-red-500 via-pink-500 to-orange-500 px-4 sm:px-6 py-4 sm:py-5 overflow-hidden flex-shrink-0">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48Y2lyY2xlIGN4PSIzMCIgY3k9IjMwIiByPSIyIi8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -125,7 +127,7 @@ export function GameOverModal({
           </div>
         </div>
 
-        <div className="px-6 py-6 space-y-5 bg-gradient-to-b from-transparent to-gray-50/30">
+        <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5 bg-gradient-to-b from-transparent to-gray-50/30 overflow-y-auto flex-1 min-h-0">
           {isNewRecord && (
             <div className="relative rounded-2xl bg-gradient-to-r from-yellow-400 via-orange-500 to-pink-500 px-5 py-4 text-center shadow-xl border-2 border-yellow-300/50 overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
@@ -146,18 +148,18 @@ export function GameOverModal({
                 <span>⭐</span>
                 <span>현재 점수</span>
               </div>
-              <div className="text-5xl font-extrabold text-white drop-shadow-lg">{score.toLocaleString()}</div>
+              <div className="text-4xl sm:text-5xl font-extrabold text-white drop-shadow-lg">{score.toLocaleString()}</div>
             </div>
           </div>
 
           {/* 통계 카드 그리드 */}
           {loading ? (
-            <div className="text-center py-8">
-              <div className="text-3xl mb-3 animate-spin">⏳</div>
-              <div className="text-sm text-gray-500 font-medium">통계 로딩 중...</div>
+            <div className="text-center py-6 sm:py-8">
+              <div className="text-2xl sm:text-3xl mb-2 sm:mb-3 animate-spin">⏳</div>
+              <div className="text-xs sm:text-sm text-gray-500 font-medium">통계 로딩 중...</div>
             </div>
           ) : periodStats ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               {[
                 { key: "today" as const, label: "오늘", emoji: "🌅", color: "from-blue-500 to-cyan-500", borderColor: "border-blue-400/40" },
                 { key: "week" as const, label: "이번주", emoji: "📅", color: "from-purple-500 to-pink-500", borderColor: "border-purple-400/40" },
@@ -169,21 +171,21 @@ export function GameOverModal({
                 return (
                   <div
                     key={key}
-                    className={`relative rounded-xl bg-gradient-to-br ${color} p-4 shadow-lg border-2 ${borderColor} overflow-hidden transition-transform hover:scale-105 ${
+                    className={`relative rounded-xl bg-gradient-to-br ${color} p-3 sm:p-4 shadow-lg border-2 ${borderColor} overflow-hidden transition-transform hover:scale-105 ${
                       isNewRecordForPeriod ? "ring-2 ring-yellow-300 ring-offset-1 animate-pulse" : ""
                     }`}
                   >
                     {isNewRecordForPeriod && (
-                      <div className="absolute top-1 right-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-md">
+                      <div className="absolute top-1 right-1 bg-yellow-400 text-yellow-900 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-md">
                         NEW
                       </div>
                     )}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-lg">{emoji}</span>
-                      <div className="text-xs font-semibold text-white/95">{label}</div>
+                    <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
+                      <span className="text-base sm:text-lg">{emoji}</span>
+                      <div className="text-[10px] sm:text-xs font-semibold text-white/95">{label}</div>
                     </div>
-                    <div className="text-2xl font-extrabold text-white drop-shadow-md">{stats.bestScore.toLocaleString()}</div>
-                    <div className="text-[10px] text-white/75 mt-1.5 font-medium">플레이 {stats.playCount}회</div>
+                    <div className="text-xl sm:text-2xl font-extrabold text-white drop-shadow-md">{stats.bestScore.toLocaleString()}</div>
+                    <div className="text-[9px] sm:text-[10px] text-white/75 mt-1 sm:mt-1.5 font-medium">플레이 {stats.playCount}회</div>
                   </div>
                 );
               })}
@@ -197,7 +199,7 @@ export function GameOverModal({
         </div>
 
         {/* 푸터 버튼 */}
-        <div className="px-6 py-5 bg-gradient-to-b from-gray-50/50 to-white border-t border-gray-200/50">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 bg-gradient-to-b from-gray-50/50 to-white border-t border-gray-200/50 flex-shrink-0">
           <button
             className="w-full rounded-xl bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 px-5 py-3.5 text-base font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 border-2 border-green-400/30"
             onClick={() => {

@@ -1,6 +1,6 @@
 // Toast 컴포넌트
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 type ToastProps = {
   message: string;
@@ -11,6 +11,12 @@ type ToastProps = {
 
 export function Toast({ message, onClose, duration = 1000, variant = "success" }: ToastProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const onCloseRef = useRef(onClose);
+
+  // onClose 함수를 ref에 저장하여 의존성 배열에서 제거
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (message) {
@@ -22,7 +28,7 @@ export function Toast({ message, onClose, duration = 1000, variant = "success" }
       
       // duration + 300ms 후에 onClose 호출 (fade-out 애니메이션 시간 고려)
       const closeTimer = setTimeout(() => {
-        onClose();
+        onCloseRef.current();
       }, duration + 300);
       
       return () => {
@@ -32,7 +38,7 @@ export function Toast({ message, onClose, duration = 1000, variant = "success" }
     } else {
       setIsVisible(false);
     }
-  }, [message, onClose, duration]);
+  }, [message, duration]);
 
   if (!message || !isVisible) return null;
 

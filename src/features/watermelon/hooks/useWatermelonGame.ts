@@ -207,9 +207,22 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
 
     createContainer(engine, containerBounds);
 
-    // 물리 시뮬레이션 루프
+    // 물리 시뮬레이션 루프 (모바일 성능 최적화)
+    let lastUpdateTime = performance.now();
+    const targetFPS = 60;
+    const frameTime = 1000 / targetFPS;
+    
     const run = () => {
-      Matter.Engine.update(engine);
+      const now = performance.now();
+      const deltaTime = now - lastUpdateTime;
+      
+      // 모바일에서 프레임 드롭이 발생할 수 있으므로 deltaTime을 제한
+      const clampedDelta = Math.min(deltaTime, frameTime * 2); // 최대 2프레임치
+      
+      // 물리 엔진 업데이트 (deltaTime을 밀리초에서 초로 변환)
+      Matter.Engine.update(engine, clampedDelta);
+      
+      lastUpdateTime = now;
       animationFrameRef.current = requestAnimationFrame(run);
     };
     run();
@@ -278,6 +291,20 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
           // 새 과일 생성
           setTimeout(() => {
             const newBody = createFruitBody(engine, newTier, mergeX, mergeY);
+            
+            // 합쳐진 과일도 중력의 영향을 받아 떨어지도록 초기 속도 설정
+            // 모바일에서 물리 엔진이 느릴 수 있으므로 약간의 초기 속도를 부여
+            const initialVelocityY = Math.max(0.2, GAME_CONFIG.dropInitialVelocityY * 0.4);
+            Matter.Body.setVelocity(newBody, { 
+              x: (rngRef.current.next() - 0.5) * 0.5, // 약간의 랜덤 수평 속도
+              y: initialVelocityY 
+            });
+            Matter.Body.setAngularVelocity(newBody, (rngRef.current.next() - 0.5) * GAME_CONFIG.dropAngularVelocityRange * 0.5);
+            
+            // 모바일에서 물리 엔진이 즉시 반영되지 않을 수 있으므로 강제로 업데이트
+            Matter.Body.setStatic(newBody, false);
+            Matter.Body.setMass(newBody, newBody.mass || 1);
+            
             const newFruit: Fruit = {
               id: `fruit_${Date.now()}_${Math.random()}`,
               tier: newTier,
@@ -295,6 +322,9 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
               fruitsRef.current = newMap;
               return newMap;
             });
+            
+            // 모바일에서 물리 엔진이 즉시 반영되도록 강제 업데이트
+            Matter.Engine.update(engine, 16);
 
             // 점수 추가
             const points = newTier * GAME_CONFIG.scoreMultiplier;
@@ -349,11 +379,35 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     Matter.Events.on(engine, "collisionStart", handleCollision);
 
     // 주기적 체크 (충돌 이벤트가 놓칠 수 있는 경우 대비)
+    // 모바일에서 성능을 고려하여 간격을 조정
     const checkMergeInterval = setInterval(() => {
       const now = Date.now() / 1000;
       const currentFruits = Array.from(fruitsRef.current.values()).filter(
         (f) => f.alive && f.bodyRef
       );
+
+      // 모바일에서 과일이 멈춰있을 때 강제로 중력 적용 (안전장치)
+      for (const fruit of currentFruits) {
+        if (!fruit.bodyRef) continue;
+        
+        const velocity = fruit.bodyRef.velocity;
+        const isStuck = Math.abs(velocity.x) < 0.01 && Math.abs(velocity.y) < 0.01;
+        const timeSinceSpawn = now - fruit.spawnTime;
+        
+        // 스폰 후 0.5초가 지났고 속도가 거의 없으면 강제로 중력 적용
+        if (timeSinceSpawn > 0.5 && isStuck && !fruit.bodyRef.isStatic) {
+          const currentY = fruit.bodyRef.position.y;
+          const containerHeight = containerBounds.height - 4; // borderWidth 고려
+          
+          // 바닥에 닿지 않았고 공중에 떠있으면 강제로 떨어뜨림
+          if (currentY < containerHeight - fruit.radius - 10) {
+            Matter.Body.setVelocity(fruit.bodyRef, {
+              x: velocity.x,
+              y: Math.max(0.1, velocity.y + 0.1) // 약간의 속도 추가
+            });
+          }
+        }
+      }
 
       for (let i = 0; i < currentFruits.length; i++) {
         for (let j = i + 1; j < currentFruits.length; j++) {
@@ -406,6 +460,20 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
 
             setTimeout(() => {
               const newBody = createFruitBody(engine, newTier, mergeX, mergeY);
+              
+              // 합쳐진 과일도 중력의 영향을 받아 떨어지도록 초기 속도 설정
+              // 모바일에서 물리 엔진이 느릴 수 있으므로 약간의 초기 속도를 부여
+              const initialVelocityY = Math.max(0.2, GAME_CONFIG.dropInitialVelocityY * 0.4);
+              Matter.Body.setVelocity(newBody, { 
+                x: (rngRef.current.next() - 0.5) * 0.5, // 약간의 랜덤 수평 속도
+                y: initialVelocityY 
+              });
+              Matter.Body.setAngularVelocity(newBody, (rngRef.current.next() - 0.5) * GAME_CONFIG.dropAngularVelocityRange * 0.5);
+              
+              // 모바일에서 물리 엔진이 즉시 반영되지 않을 수 있으므로 강제로 업데이트
+              Matter.Body.setStatic(newBody, false);
+              Matter.Body.setMass(newBody, newBody.mass || 1);
+              
               const newFruit: Fruit = {
                 id: `fruit_${Date.now()}_${Math.random()}`,
                 tier: newTier,
@@ -423,6 +491,9 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
                 fruitsRef.current = newMap;
                 return newMap;
               });
+              
+              // 모바일에서 물리 엔진이 즉시 반영되도록 강제 업데이트
+              Matter.Engine.update(engine, 16);
 
               const points = newTier * GAME_CONFIG.scoreMultiplier;
               setScore((prev) => {
@@ -485,30 +556,68 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     };
   }, [containerBounds.width, containerBounds.height, bestScore]);
 
-  // 과일 위치 업데이트
+  // 과일 위치 업데이트 (모바일 성능 최적화)
   useEffect(() => {
     if (!engineRef.current) return;
 
+    let lastUpdateTime = performance.now();
+    const targetFPS = 60;
+    const frameTime = 1000 / targetFPS;
+    let rafId: number | null = null;
+
     const updatePositions = () => {
+      const now = performance.now();
+      const deltaTime = now - lastUpdateTime;
+      
+      // 프레임 드롭이 심할 때는 업데이트 스킵
+      if (deltaTime < frameTime * 0.5) {
+        rafId = requestAnimationFrame(updatePositions);
+        return;
+      }
+      
       setFruits((prev) => {
         const newMap = new Map(prev);
+        let hasChanges = false;
+        
         for (const [id, fruit] of newMap.entries()) {
-          if (fruit.bodyRef) {
+          if (fruit.bodyRef && fruit.alive) {
             const pos = fruit.bodyRef.position;
-            newMap.set(id, {
-              ...fruit,
-              x: pos.x,
-              y: pos.y,
-            });
+            const velocity = fruit.bodyRef.velocity;
+            
+            // 위치가 변경되었거나 속도가 있는 경우에만 업데이트
+            const dx = Math.abs(pos.x - fruit.x);
+            const dy = Math.abs(pos.y - fruit.y);
+            const isMoving = Math.abs(velocity.x) > 0.01 || Math.abs(velocity.y) > 0.01;
+            
+            if (dx > 0.1 || dy > 0.1 || isMoving) {
+              newMap.set(id, {
+                ...fruit,
+                x: pos.x,
+                y: pos.y,
+              });
+              hasChanges = true;
+            }
           }
         }
-        fruitsRef.current = newMap;
-        return newMap;
+        
+        if (hasChanges) {
+          fruitsRef.current = newMap;
+          return newMap;
+        }
+        return prev; // 변경사항이 없으면 이전 상태 유지
       });
+      
+      lastUpdateTime = now;
+      rafId = requestAnimationFrame(updatePositions);
     };
 
-    const interval = setInterval(updatePositions, 16); // ~60fps
-    return () => clearInterval(interval);
+    rafId = requestAnimationFrame(updatePositions);
+    
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, []);
 
   // 게임 오버 체크 (requestAnimationFrame과 연동하여 정확하게 체크)

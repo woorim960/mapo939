@@ -9,9 +9,10 @@ type NicknameModalProps = {
   onClose?: () => void;
   onSubmit: (nickname: string, password: string) => void;
   initialNickname?: string;
+  externalError?: string; // 외부에서 전달받은 에러 메시지
 };
 
-export function NicknameModal({ open, onSubmit, initialNickname = "" }: NicknameModalProps) {
+export function NicknameModal({ open, onSubmit, initialNickname = "", externalError }: NicknameModalProps) {
   const [nickname, setNickname] = useState(initialNickname);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +24,13 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
       setError("");
     }
   }, [open, initialNickname]);
+
+  // 외부에서 전달받은 에러 메시지 표시
+  useEffect(() => {
+    if (externalError) {
+      setError(externalError);
+    }
+  }, [externalError]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,23 +64,25 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200"
+      style={{ height: '100dvh' }}
       role="dialog"
       aria-modal="true"
       aria-label="닉네임 입력"
     >
       <div
-        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
+        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 flex flex-col"
+        style={{ maxHeight: 'calc(100dvh - 1rem)' }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b-2 border-green-200/50 bg-gradient-to-r from-green-50 to-emerald-50 px-5 py-4 rounded-t-2xl">
+        <div className="flex items-center justify-between border-b-2 border-green-200/50 bg-gradient-to-r from-green-50 to-emerald-50 px-4 sm:px-5 py-3 sm:py-4 rounded-t-2xl flex-shrink-0">
           <div className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-2">
             <span className="text-2xl">🍉</span>
             <span>닉네임 입력</span>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-5 py-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-4 sm:px-5 py-4 sm:py-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1 min-h-0">
           <div>
             <label htmlFor="nickname" className="block text-sm font-semibold text-gray-700 mb-2">
               닉네임
@@ -84,6 +94,7 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
               onChange={(e) => {
                 setNickname(e.target.value);
                 if (error) setError("");
+                if (externalError) setError(""); // 외부 에러도 입력 시 초기화
               }}
               placeholder="닉네임을 입력하세요"
               className={`w-full rounded-xl border-2 px-4 py-3 text-base font-medium outline-none focus:ring-4 transition-all ${
@@ -94,10 +105,10 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
               autoFocus
               maxLength={20}
             />
-            {error && (
+            {(error || externalError) && (
               <div className="mt-2 p-2 rounded-lg bg-red-50 border-2 border-red-200 flex items-center gap-2 animate-in slide-in-from-top-1 duration-200">
                 <span className="text-xl">⚠️</span>
-                <div className="text-sm font-semibold text-red-700">{error}</div>
+                <div className="text-sm font-semibold text-red-700">{error || externalError}</div>
               </div>
             )}
             <div className="mt-2 text-xs text-gray-500">
@@ -116,10 +127,11 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (error) setError("");
+                if (externalError) setError(""); // 외부 에러도 입력 시 초기화
               }}
               placeholder="패스워드를 입력하세요"
               className={`w-full rounded-xl border-2 px-4 py-3 text-base font-medium outline-none focus:ring-4 transition-all ${
-                error
+                error || externalError
                   ? "border-red-300 focus:border-red-500 focus:ring-red-200"
                   : "border-green-300 focus:border-green-500 focus:ring-green-200"
               }`}

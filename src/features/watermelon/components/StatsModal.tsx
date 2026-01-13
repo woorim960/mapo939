@@ -51,17 +51,19 @@ export function StatsModal({ open, onClose, currentPlayerId }: StatsModalProps) 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200"
+      style={{ height: '100dvh' }}
       onMouseDown={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="통계"
     >
       <div
-        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/90 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
+        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/90 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 flex flex-col"
+        style={{ maxHeight: 'calc(100dvh - 1rem)' }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b-2 border-green-200/50 bg-gradient-to-r from-green-50 to-emerald-50 px-5 py-4 rounded-t-2xl">
+        <div className="flex items-center justify-between border-b-2 border-green-200/50 bg-gradient-to-r from-green-50 to-emerald-50 px-4 sm:px-5 py-3 sm:py-4 rounded-t-2xl flex-shrink-0">
           <div className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-2">
             <span className="text-2xl">🏆</span>
             <span>리더보드</span>
@@ -76,7 +78,7 @@ export function StatsModal({ open, onClose, currentPlayerId }: StatsModalProps) 
         </div>
 
         {/* 탭 메뉴 */}
-        <div className="flex border-b-2 border-gray-200 bg-gray-50/50">
+        <div className="flex border-b-2 border-gray-200 bg-gray-50/50 flex-shrink-0">
           {[
             { key: "today" as Period, label: "오늘" },
             { key: "week" as Period, label: "이번주" },
@@ -86,7 +88,7 @@ export function StatsModal({ open, onClose, currentPlayerId }: StatsModalProps) 
             <button
               key={tab.key}
               onClick={() => setSelectedPeriod(tab.key)}
-              className={`flex-1 px-3 py-2.5 text-sm font-semibold transition-all duration-200 ${
+              className={`flex-1 px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-200 ${
                 selectedPeriod === tab.key
                   ? "text-green-600 border-b-2 border-green-600 bg-white"
                   : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
@@ -97,7 +99,7 @@ export function StatsModal({ open, onClose, currentPlayerId }: StatsModalProps) 
           ))}
         </div>
 
-        <div className="px-5 py-6">
+        <div className="px-4 sm:px-5 py-4 sm:py-6 overflow-y-auto flex-1 min-h-0">
           {loading ? (
             <div className="text-center py-8">
               <div className="text-4xl mb-2 animate-spin">⏳</div>
