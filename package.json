@@ -5,20 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "dev:prod": "NODE_ENV=production next dev",
-    "build": "npx prisma migrate deploy && npx next build",
+    "build": "npm run db:migrate && npx next build",
     "build:dev": "NODE_ENV=development npx prisma migrate deploy && npx next build",
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "npx prisma migrate deploy",
-    "db:migrate:dev": "npx prisma migrate dev",
+    "db:migrate:new": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "db:studio": "npx prisma studio",
     "check:env": "tsx scripts/check-env.ts",
     "db:copy": "tsx scripts/copy-db-data.ts",
     "seed:members": "tsx prisma/seed-members.ts",
     "seed:watermelon-items": "tsx prisma/seed-watermelon-items.ts",
-    "prod": "npx vercel --prod",
-    "postinstall": "prisma generate"
+    "prod": "npx vercel --prod"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

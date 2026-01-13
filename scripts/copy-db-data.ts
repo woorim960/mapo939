@@ -4,7 +4,10 @@
 //   2. 새 DB URL을 TARGET_DATABASE_URL에 설정
 //   3. tsx scripts/copy-db-data.ts 실행
 
-import "dotenv/config";
+// .env.local 파일을 명시적으로 로드
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
