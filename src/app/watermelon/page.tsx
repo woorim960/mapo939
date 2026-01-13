@@ -229,8 +229,12 @@ export default function WatermelonPage() {
   // 화면 크기에 맞춰 컨테이너 크기 조정 (스크롤 절대 방지)
   useEffect(() => {
     const updateBounds = () => {
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
+      // 모바일 브라우저의 주소창/툴바 문제를 해결하기 위해 visualViewport 사용
+      const viewportWidth = window.visualViewport?.width || window.innerWidth;
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      
+      // 대안: document.documentElement.clientHeight 사용 (더 안정적)
+      // const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
 
       const headerElement = document.querySelector('header') as HTMLElement | null;
       const controlElement = document.querySelector('[data-control-buttons]') as HTMLElement | null;
@@ -276,6 +280,11 @@ export default function WatermelonPage() {
     const timeoutId2 = setTimeout(updateBounds, 100);
 
     window.addEventListener("resize", updateBounds);
+    // 모바일 브라우저의 주소창/툴바 변화 감지
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateBounds);
+      window.visualViewport.addEventListener("scroll", updateBounds);
+    }
 
     const resizeObserver = new ResizeObserver(() => {
       updateBounds();
@@ -290,6 +299,10 @@ export default function WatermelonPage() {
 
     return () => {
       window.removeEventListener("resize", updateBounds);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", updateBounds);
+        window.visualViewport.removeEventListener("scroll", updateBounds);
+      }
       clearTimeout(timeoutId1);
       clearTimeout(timeoutId2);
       resizeObserver.disconnect();
