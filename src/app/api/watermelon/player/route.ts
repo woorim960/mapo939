@@ -68,7 +68,7 @@ export async function POST(req: Request) {
 
       const allScores = await prisma.watermelonScore.findMany({
         where: { playerId: player.id },
-        select: { score: true },
+        select: { score: true, maxTier: true },
       });
 
       const averageScore =
@@ -76,14 +76,29 @@ export async function POST(req: Request) {
           ? Math.round(allScores.reduce((sum, s) => sum + s.score, 0) / allScores.length)
           : 0;
 
+      // 최대 과일 레벨 평균 계산
+      const maxTiers = allScores
+        .map((s) => s.maxTier)
+        .filter((tier): tier is number => tier !== null && tier !== undefined);
+      const averageMaxTier =
+        maxTiers.length > 0
+          ? Math.round((maxTiers.reduce((sum, t) => sum + t, 0) / maxTiers.length) * 10) / 10
+          : null;
+
+      const playerData: any = {
+        id: player.id,
+        nickname: player.nickname,
+        bestScore,
+        averageScore,
+        playCount,
+      };
+
+      if (averageMaxTier !== null) {
+        playerData.averageMaxTier = averageMaxTier;
+      }
+
       return NextResponse.json({
-        player: {
-          id: player.id,
-          nickname: player.nickname,
-          bestScore,
-          averageScore,
-          playCount,
-        },
+        player: playerData,
       });
     }
 
@@ -111,7 +126,7 @@ export async function POST(req: Request) {
 
     const allScores = await prisma.watermelonScore.findMany({
       where: { playerId: player.id },
-      select: { score: true },
+      select: { score: true, maxTier: true },
     });
 
     const averageScore =
@@ -119,14 +134,29 @@ export async function POST(req: Request) {
         ? Math.round(allScores.reduce((sum, s) => sum + s.score, 0) / allScores.length)
         : 0;
 
+    // 최대 과일 레벨 평균 계산
+    const maxTiers = allScores
+      .map((s) => s.maxTier)
+      .filter((tier): tier is number => tier !== null && tier !== undefined);
+    const averageMaxTier =
+      maxTiers.length > 0
+        ? Math.round((maxTiers.reduce((sum, t) => sum + t, 0) / maxTiers.length) * 10) / 10
+        : null;
+
+    const playerData: any = {
+      id: player.id,
+      nickname: player.nickname,
+      bestScore,
+      playCount,
+      averageScore,
+    };
+
+    if (averageMaxTier !== null) {
+      playerData.averageMaxTier = averageMaxTier;
+    }
+
     return NextResponse.json({
-      player: {
-        id: player.id,
-        nickname: player.nickname,
-        bestScore,
-        playCount,
-        averageScore,
-      },
+      player: playerData,
     });
   } catch (error: any) {
     console.error("Watermelon player API error:", error);

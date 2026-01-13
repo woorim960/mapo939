@@ -29,7 +29,7 @@ export function createContainer(
       isStatic: true,
       label: "ground",
       restitution: PHYSICS_CONFIG.groundRestitution,
-      friction: 0.1,
+      friction: PHYSICS_CONFIG.groundFriction, // 바닥 마찰력
     }
   );
 

@@ -37,3 +37,14 @@ export type MergeAnimation = {
   duration: number;
   tier: FruitTier;
 };
+
+export type PopAnimation = {
+  id: string;
+  x: number;
+  y: number;
+  startTime: number;
+  duration: number;
+  tier: FruitTier;
+  velocityX: number;
+  velocityY: number;
+};

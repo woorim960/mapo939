@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useWatermelonGame } from "@/features/watermelon/hooks/useWatermelonGame";
 import { GameCanvas } from "@/features/watermelon/components/GameCanvas";
 import { ScoreBoard } from "@/features/watermelon/components/ScoreBoard";
@@ -13,14 +13,17 @@ import { HowToModal } from "@/features/watermelon/components/HowToModal";
 import { NicknameModal } from "@/features/watermelon/components/NicknameModal";
 import { StatsModal } from "@/features/watermelon/components/StatsModal";
 import { SaveConfirmModal } from "@/features/watermelon/components/SaveConfirmModal";
+import { LogoutConfirmModal } from "@/features/watermelon/components/LogoutConfirmModal";
 import { MenuButton } from "@/features/watermelon/components/MenuButton";
 import { Toast } from "@/shared/components/Toast";
 import { createOrGetPlayer } from "@/features/watermelon/api";
 import { getLS, setLS, removeLS } from "@/shared/utils/storage";
 import { FRUIT_CONFIGS } from "@/features/watermelon/utils/config";
+import { FruitEmoji } from "@/features/watermelon/components/FruitEmoji";
 
 const PLAYER_ID_KEY = "watermelon_player_id";
 const PLAYER_NICKNAME_KEY = "watermelon_player_nickname";
+const PLAYER_PASSWORD_KEY = "watermelon_player_password"; // 자동 로그인을 위한 패스워드 저장
 
 export default function WatermelonPage() {
   const [containerBounds, setContainerBounds] = useState({
@@ -32,7 +35,7 @@ export default function WatermelonPage() {
 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerNickname, setPlayerNickname] = useState<string>("");
-  const [playerStats, setPlayerStats] = useState<{ bestScore: number; averageScore: number; playCount: number; averageMaxTier?: number } | null>(null);
+  const [playerStats, setPlayerStats] = useState<{ bestScore?: number; averageScore?: number; playCount?: number; averageMaxTier?: number } | null>(null);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [loadingPlayer, setLoadingPlayer] = useState(true);
 
@@ -41,22 +44,48 @@ export default function WatermelonPage() {
   const [showStats, setShowStats] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [toast, setToast] = useState("");
   const [currentScoreTier, setCurrentScoreTier] = useState(0); // 현재 도달한 점수 단계
   const [celebrationMessage, setCelebrationMessage] = useState<{ message: string; intensity: number } | null>(null);
   const [gameOverModalDismissed, setGameOverModalDismissed] = useState(false); // 게임 오버 모달이 닫혔는지 추적
+  const [textCompactMode, setTextCompactMode] = useState<{ currentMax: number; average: number; next: number }>({ currentMax: 0, average: 0, next: 0 }); // 0: 전체, 1: "최대" 제거, 2: "현재"도 제거
+  const currentMaxRef = useRef<HTMLDivElement>(null);
+  const averageRef = useRef<HTMLDivElement>(null);
+  const nextFruitRef = useRef<HTMLDivElement>(null);
 
   // 닉네임 확인 및 플레이어 로드
   useEffect(() => {
     const savedNickname = getLS(PLAYER_NICKNAME_KEY);
+    const savedPassword = getLS(PLAYER_PASSWORD_KEY);
 
-    if (savedNickname) {
-      // 닉네임이 있으면 DB에서 해당 닉네임의 플레이어를 찾아서 로드
-      // (같은 닉네임이면 항상 같은 유저로 판단)
-      // 닉네임만으로는 로그인할 수 없으므로 모달 표시
-      setShowNicknameModal(true);
-      setLoadingPlayer(false);
+    if (savedNickname && savedPassword) {
+      // 닉네임과 패스워드가 모두 있으면 자동 로그인 시도
+      const autoLogin = async () => {
+        try {
+          setLoadingPlayer(true);
+          const player = await createOrGetPlayer(savedNickname, savedPassword);
+          setPlayerId(player.id);
+          setPlayerNickname(player.nickname);
+          setLS(PLAYER_ID_KEY, player.id);
+          setLS(PLAYER_NICKNAME_KEY, player.nickname);
+          setLS(PLAYER_PASSWORD_KEY, savedPassword); // 패스워드 유지
+          setPlayerStats({
+            bestScore: player.bestScore ?? 0,
+            averageScore: player.averageScore ?? 0,
+            playCount: player.playCount ?? 0,
+            averageMaxTier: player.averageMaxTier,
+          });
+          setLoadingPlayer(false);
+        } catch (error: any) {
+          console.error("Auto login failed:", error);
+          // 자동 로그인 실패 시 모달 표시
+          setShowNicknameModal(true);
+          setLoadingPlayer(false);
+        }
+      };
+      autoLogin();
     } else {
       setShowNicknameModal(true);
       setLoadingPlayer(false);
@@ -69,9 +98,9 @@ export default function WatermelonPage() {
       const { getPlayerStats } = await import("@/features/watermelon/api");
       const stats = await getPlayerStats(pid);
       setPlayerStats({
-        bestScore: stats.bestScore,
-        averageScore: stats.averageScore,
-        playCount: stats.playCount,
+        bestScore: stats.bestScore ?? 0,
+        averageScore: stats.averageScore ?? 0,
+        playCount: stats.playCount ?? 0,
         averageMaxTier: stats.averageMaxTier,
       });
     } catch (error) {
@@ -98,6 +127,7 @@ export default function WatermelonPage() {
       setPlayerNickname(player.nickname);
       setLS(PLAYER_ID_KEY, player.id);
       setLS(PLAYER_NICKNAME_KEY, player.nickname);
+      setLS(PLAYER_PASSWORD_KEY, password); // 자동 로그인을 위해 패스워드 저장
       setPlayerStats({
         bestScore: player.bestScore,
         averageScore: player.averageScore,
@@ -120,18 +150,18 @@ export default function WatermelonPage() {
   };
 
   const handleLogout = () => {
-    // 현재 게임이 진행 중이면 확인
-    if (game.score > 0 && !game.isGameOver) {
-      if (!confirm("게임이 진행 중입니다. 로그아웃하면 현재 점수가 저장되지 않을 수 있습니다. 계속하시겠습니까?")) {
-        return;
-      }
-    }
+    setShowLogoutConfirm(true);
+  };
+
+  const handleLogoutConfirm = () => {
     // 로컬 스토리지에서 플레이어 정보 제거
     removeLS(PLAYER_ID_KEY);
     removeLS(PLAYER_NICKNAME_KEY);
+    removeLS(PLAYER_PASSWORD_KEY);
     setPlayerId(null);
     setPlayerNickname("");
     setPlayerStats(null);
+    setShowLogoutConfirm(false);
     setShowNicknameModal(true);
   };
 
@@ -395,6 +425,104 @@ export default function WatermelonPage() {
     game.dropFruit(x);
   };
 
+  // 텍스트 두 줄 감지 및 자동 단축
+  useEffect(() => {
+    const checkTextOverflow = () => {
+      setTextCompactMode((prevMode) => {
+        const newMode = { ...prevMode };
+        let changed = false;
+
+        // "현재 최대" 체크
+        if (currentMaxRef.current) {
+          const element = currentMaxRef.current;
+          const isTwoLines = element.scrollHeight > element.clientHeight;
+          
+          if (isTwoLines && newMode.currentMax === 0) {
+            newMode.currentMax = 1; // "최대" 제거
+            changed = true;
+          } else if (isTwoLines && newMode.currentMax === 1) {
+            newMode.currentMax = 2; // "현재"도 제거
+            changed = true;
+          } else if (!isTwoLines && newMode.currentMax > 0) {
+            // 한 줄이면 다시 복원 시도
+            if (newMode.currentMax === 2) {
+              newMode.currentMax = 1;
+              changed = true;
+            } else if (newMode.currentMax === 1) {
+              newMode.currentMax = 0;
+              changed = true;
+            }
+          }
+        }
+
+        // "평균 레벨" 체크
+        if (averageRef.current) {
+          const element = averageRef.current;
+          const isTwoLines = element.scrollHeight > element.clientHeight;
+          
+          if (isTwoLines && newMode.average === 0) {
+            newMode.average = 1; // "레벨" 제거
+            changed = true;
+          } else if (isTwoLines && newMode.average === 1) {
+            newMode.average = 2; // "평균"도 제거
+            changed = true;
+          } else if (!isTwoLines && newMode.average > 0) {
+            if (newMode.average === 2) {
+              newMode.average = 1;
+              changed = true;
+            } else if (newMode.average === 1) {
+              newMode.average = 0;
+              changed = true;
+            }
+          }
+        }
+
+        // "다음" 체크
+        if (nextFruitRef.current) {
+          const element = nextFruitRef.current;
+          const isTwoLines = element.scrollHeight > element.clientHeight;
+          
+          if (isTwoLines && newMode.next === 0) {
+            newMode.next = 1; // "다음" 제거
+            changed = true;
+          } else if (!isTwoLines && newMode.next === 1) {
+            newMode.next = 0;
+            changed = true;
+          }
+        }
+
+        return changed ? newMode : prevMode;
+      });
+    };
+
+    // 초기 체크 및 리사이즈 감지
+    const timeoutId1 = setTimeout(checkTextOverflow, 100);
+    const timeoutId2 = setTimeout(checkTextOverflow, 300);
+    
+    const resizeObserver = new ResizeObserver(() => {
+      setTimeout(checkTextOverflow, 50);
+    });
+
+    if (currentMaxRef.current) resizeObserver.observe(currentMaxRef.current);
+    if (averageRef.current) resizeObserver.observe(averageRef.current);
+    if (nextFruitRef.current) resizeObserver.observe(nextFruitRef.current);
+
+    window.addEventListener('resize', checkTextOverflow);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', checkTextOverflow);
+    }
+
+    return () => {
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', checkTextOverflow);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', checkTextOverflow);
+      }
+    };
+  }, [game.maxUnlockedTier, playerStats?.averageMaxTier]);
+
   // body 스크롤 방지
   useEffect(() => {
     const originalStyle = window.getComputedStyle(document.body).overflow;
@@ -471,7 +599,7 @@ export default function WatermelonPage() {
               <span className="text-2xl">🍉</span>
               <span>수박게임</span>
             </h1>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 className="text-xs px-3 py-1.5 rounded-lg text-gray-600 hover:bg-green-50 hover:text-green-700 transition-colors border border-gray-200 hover:border-green-300 font-semibold"
@@ -491,57 +619,63 @@ export default function WatermelonPage() {
             </div>
           </div>
 
+          {playerNickname && (
+            <div className="flex items-center justify-between w-full gap-2 text-xs text-gray-600 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-500">플레이어</span>
+                <div className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold border border-green-200">
+                  {playerNickname}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300 flex-shrink-0"
+                title="로그아웃"
+              >
+                🚪
+              </button>
+            </div>
+          )}
           <div className="flex items-end justify-between gap-3">
             <div className="flex flex-col gap-1.5 items-start">
-              {playerNickname && (
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span className="font-medium text-gray-500">플레이어</span>
-                  <div className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold border border-green-200">
-                    {playerNickname}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300"
-                    title="로그아웃"
-                  >
-                    🚪
-                  </button>
-                </div>
-              )}
               <div className="flex-1 min-w-0">
                 {playerStats ? (
                   <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-xs text-gray-600">
                       <div className="flex items-center gap-1">
                         <span>최고</span>
-                        <span className="font-semibold text-gray-800">{playerStats.bestScore.toLocaleString()}</span>
+                        <span className="font-semibold text-gray-800">{(playerStats.bestScore ?? 0).toLocaleString()}</span>
                       </div>
                       <span className="text-gray-300">•</span>
                       <div className="flex items-center gap-1">
                         <span>평균</span>
-                        <span className="font-semibold text-gray-800">{playerStats.averageScore.toLocaleString()}</span>
+                        <span className="font-semibold text-gray-800">{(playerStats.averageScore ?? 0).toLocaleString()}</span>
                       </div>
                       <span className="text-gray-300">•</span>
                       <div className="flex items-center gap-1">
                         <span>플레이</span>
-                        <span className="font-semibold text-gray-800">{playerStats.playCount}회</span>
+                        <span className="font-semibold text-gray-800">{(playerStats.playCount ?? 0)}회</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-600">
                       {game.maxUnlockedTier !== undefined && (
                         <>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-gray-500">현재 최대</span>
-                            <span className="text-base">{FRUIT_CONFIGS[game.maxUnlockedTier].emoji}</span>
+                          <div ref={currentMaxRef} className="flex items-center gap-1.5 whitespace-nowrap">
+                            {textCompactMode.currentMax === 0 && <span className="font-medium text-gray-500">현재 최대</span>}
+                            {textCompactMode.currentMax === 1 && <span className="font-medium text-gray-500">현재</span>}
+                            {textCompactMode.currentMax === 2 && null}
+                            <FruitEmoji tier={game.maxUnlockedTier} className="text-base" />
                             <span className="font-semibold text-gray-800">{FRUIT_CONFIGS[game.maxUnlockedTier].name}</span>
                             <span className="text-gray-400">(Lv.{game.maxUnlockedTier})</span>
                           </div>
                           {playerStats.averageMaxTier !== undefined && playerStats.averageMaxTier !== null && (
                             <>
                               <span className="text-gray-300">•</span>
-                              <div className="flex items-center gap-1">
-                                <span className="font-medium text-gray-500">평균 레벨</span>
+                              <div ref={averageRef} className="flex items-center gap-1 whitespace-nowrap">
+                                {textCompactMode.average === 0 && <span className="font-medium text-gray-500">평균 레벨</span>}
+                                {textCompactMode.average === 1 && <span className="font-medium text-gray-500">평균</span>}
+                                {textCompactMode.average === 2 && null}
                                 <span className="font-semibold text-gray-800">{playerStats.averageMaxTier.toFixed(1)}</span>
                               </div>
                             </>
@@ -556,7 +690,7 @@ export default function WatermelonPage() {
                     {game.maxUnlockedTier !== undefined && (
                       <div className="flex items-center gap-1.5 text-xs text-gray-600">
                         <span className="font-medium text-gray-500">최대 과일</span>
-                        <span className="text-base">{FRUIT_CONFIGS[game.maxUnlockedTier].emoji}</span>
+                        <FruitEmoji tier={game.maxUnlockedTier} className="text-base" />
                         <span className="font-semibold text-gray-800">{FRUIT_CONFIGS[game.maxUnlockedTier].name}</span>
                         <span className="text-gray-400">(Lv.{game.maxUnlockedTier})</span>
                       </div>
@@ -565,7 +699,7 @@ export default function WatermelonPage() {
                 )}
               </div>
             </div>
-            <NextFruit fruitLevel={game.nextNextTier} />
+            <NextFruit ref={nextFruitRef} fruitLevel={game.nextTier} hideText={textCompactMode.next === 1} />
           </div>
         </header>
 
@@ -583,9 +717,11 @@ export default function WatermelonPage() {
             fruits={game.fruits}
             scoreAnimations={game.scoreAnimations}
             mergeAnimations={game.mergeAnimations}
+            popAnimations={game.popAnimations}
             containerBounds={containerBounds}
             currentFruitTier={game.nextTier}
             onDrop={handleDrop}
+            onWatermelonClick={game.handleWatermelonClick}
             onAnimationComplete={game.handleAnimationComplete}
           />
         </div>
@@ -627,6 +763,14 @@ export default function WatermelonPage() {
         score={game.score}
         onConfirm={handleSaveConfirm}
         onCancel={() => setShowSaveConfirm(false)}
+      />
+
+      {/* 로그아웃 확인 모달 */}
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        playerNickname={playerNickname}
+        onConfirm={handleLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
 
       {/* 게임 오버 모달 */}
