@@ -7,17 +7,19 @@ import { useState, useEffect } from "react";
 type NicknameModalProps = {
   open: boolean;
   onClose?: () => void;
-  onSubmit: (nickname: string) => void;
+  onSubmit: (nickname: string, password: string) => void;
   initialNickname?: string;
 };
 
 export function NicknameModal({ open, onSubmit, initialNickname = "" }: NicknameModalProps) {
   const [nickname, setNickname] = useState(initialNickname);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) {
       setNickname(initialNickname);
+      setPassword("");
       setError("");
     }
   }, [open, initialNickname]);
@@ -35,9 +37,19 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
       setError("닉네임은 20자 이하로 입력해주세요.");
       return;
     }
+
+    if (!password) {
+      setError("패스워드를 입력해주세요.");
+      return;
+    }
+
+    if (password.length < 4) {
+      setError("패스워드는 4자 이상 입력해주세요.");
+      return;
+    }
     
     setError("");
-    onSubmit(trimmed);
+    onSubmit(trimmed, password);
   };
 
   if (!open) return null;
@@ -90,6 +102,42 @@ export function NicknameModal({ open, onSubmit, initialNickname = "" }: Nickname
             )}
             <div className="mt-2 text-xs text-gray-500">
               닉네임은 게임 통계에 사용되며, 최대 20자까지 입력 가능합니다.
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
+              패스워드
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (error) setError("");
+              }}
+              placeholder="패스워드를 입력하세요"
+              className={`w-full rounded-xl border-2 px-4 py-3 text-base font-medium outline-none focus:ring-4 transition-all ${
+                error
+                  ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                  : "border-green-300 focus:border-green-500 focus:ring-green-200"
+              }`}
+            />
+            <div className="mt-2 text-xs text-gray-500">
+              패스워드는 4자 이상 입력해주세요. 중복된 닉네임이 있으면 패스워드로 본인을 확인합니다.
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-blue-50 border-2 border-blue-200 p-3 space-y-1.5">
+            <div className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
+              <span>ℹ️</span>
+              <span>안내</span>
+            </div>
+            <div className="text-xs text-blue-700 space-y-0.5">
+              <div>• 중복된 닉네임이 없으면 자동으로 회원가입됩니다.</div>
+              <div>• 중복된 닉네임이 있으면 패스워드로 본인 확인 후 기존 계정으로 플레이합니다.</div>
+              <div>• 패스워드가 일치하지 않으면 해당 닉네임으로 플레이할 수 없습니다.</div>
             </div>
           </div>
 

@@ -16,7 +16,7 @@ import { SaveConfirmModal } from "@/features/watermelon/components/SaveConfirmMo
 import { MenuButton } from "@/features/watermelon/components/MenuButton";
 import { Toast } from "@/shared/components/Toast";
 import { createOrGetPlayer } from "@/features/watermelon/api";
-import { getLS, setLS } from "@/shared/utils/storage";
+import { getLS, setLS, removeLS } from "@/shared/utils/storage";
 import { FRUIT_CONFIGS } from "@/features/watermelon/utils/config";
 
 const PLAYER_ID_KEY = "watermelon_player_id";
@@ -49,14 +49,13 @@ export default function WatermelonPage() {
 
   // 닉네임 확인 및 플레이어 로드
   useEffect(() => {
-    const savedPlayerId = getLS(PLAYER_ID_KEY);
     const savedNickname = getLS(PLAYER_NICKNAME_KEY);
 
-    if (savedPlayerId && savedNickname) {
-      setPlayerId(savedPlayerId);
-      setPlayerNickname(savedNickname);
-      // 플레이어 통계 로드
-      loadPlayerStats(savedPlayerId);
+    if (savedNickname) {
+      // 닉네임이 있으면 DB에서 해당 닉네임의 플레이어를 찾아서 로드
+      // (같은 닉네임이면 항상 같은 유저로 판단)
+      // 닉네임만으로는 로그인할 수 없으므로 모달 표시
+      setShowNicknameModal(true);
       setLoadingPlayer(false);
     } else {
       setShowNicknameModal(true);
@@ -91,10 +90,10 @@ export default function WatermelonPage() {
     }
   }, [game.isGameOver, playerId]);
 
-  const handleNicknameSubmit = async (nickname: string) => {
+  const handleNicknameSubmit = async (nickname: string, password: string) => {
     try {
       setLoadingPlayer(true);
-      const player = await createOrGetPlayer(nickname);
+      const player = await createOrGetPlayer(nickname, password);
       setPlayerId(player.id);
       setPlayerNickname(player.nickname);
       setLS(PLAYER_ID_KEY, player.id);
@@ -107,12 +106,33 @@ export default function WatermelonPage() {
       });
       setShowNicknameModal(false);
       setToast(`환영합니다, ${player.nickname}님! 🍉`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create/get player:", error);
-      setToast("플레이어 생성에 실패했습니다. 다시 시도해주세요.");
+      // ApiError의 경우 error.error 필드에 에러 코드가 있음
+      if (error && (error.error === "invalid_password" || error.code === "invalid_password" || error.status === 401)) {
+        setToast("패스워드가 일치하지 않습니다. 다른 닉네임을 사용하거나 올바른 패스워드를 입력해주세요.");
+      } else {
+        setToast("플레이어 생성에 실패했습니다. 다시 시도해주세요.");
+      }
     } finally {
       setLoadingPlayer(false);
     }
+  };
+
+  const handleLogout = () => {
+    // 현재 게임이 진행 중이면 확인
+    if (game.score > 0 && !game.isGameOver) {
+      if (!confirm("게임이 진행 중입니다. 로그아웃하면 현재 점수가 저장되지 않을 수 있습니다. 계속하시겠습니까?")) {
+        return;
+      }
+    }
+    // 로컬 스토리지에서 플레이어 정보 제거
+    removeLS(PLAYER_ID_KEY);
+    removeLS(PLAYER_NICKNAME_KEY);
+    setPlayerId(null);
+    setPlayerNickname("");
+    setPlayerStats(null);
+    setShowNicknameModal(true);
   };
 
   // 점수 단계 체크 및 축하 메시지 (500점, 이후 1000점 단위)
@@ -233,8 +253,9 @@ export default function WatermelonPage() {
       const viewportWidth = window.visualViewport?.width || window.innerWidth;
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
       
-      // 대안: document.documentElement.clientHeight 사용 (더 안정적)
-      // const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+      // CSS 변수로 뷰포트 높이 설정 (모든 UI가 사용할 수 있도록)
+      document.documentElement.style.setProperty('--viewport-height', `${viewportHeight}px`);
+      document.documentElement.style.setProperty('--viewport-width', `${viewportWidth}px`);
 
       const headerElement = document.querySelector('header') as HTMLElement | null;
       const controlElement = document.querySelector('[data-control-buttons]') as HTMLElement | null;
@@ -275,6 +296,11 @@ export default function WatermelonPage() {
         height: gameAreaHeight,
       });
     };
+
+    // 초기 뷰포트 높이 설정
+    const initialViewportHeight = window.visualViewport?.height || window.innerHeight;
+    document.documentElement.style.setProperty('--viewport-height', `${initialViewportHeight}px`);
+    document.documentElement.style.setProperty('--viewport-width', `${window.visualViewport?.width || window.innerWidth}px`);
 
     const timeoutId1 = setTimeout(updateBounds, 0);
     const timeoutId2 = setTimeout(updateBounds, 100);
@@ -384,7 +410,7 @@ export default function WatermelonPage() {
   // 닉네임 모달이 열려있거나 로딩 중이면 게임 비활성화
   if (showNicknameModal || loadingPlayer) {
     return (
-      <main className="fixed inset-0 h-screen w-screen overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
+      <main className="fixed inset-0 w-screen overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50" style={{ height: 'var(--viewport-height, 100vh)' }}>
         <NicknameModal
           open={showNicknameModal}
           onSubmit={handleNicknameSubmit}
@@ -403,7 +429,7 @@ export default function WatermelonPage() {
   }
 
   return (
-    <main className={`fixed inset-0 h-screen w-screen overflow-hidden bg-gradient-to-br ${colorTheme.bg} p-4 transition-all duration-700`}>
+    <main className={`fixed inset-0 w-screen overflow-hidden bg-gradient-to-br ${colorTheme.bg} p-4 transition-all duration-700`} style={{ height: 'var(--viewport-height, 100vh)' }}>
       <div className="mx-auto h-full max-w-md flex flex-col gap-4 overflow-hidden">
         {/* 축하 메시지 오버레이 */}
         {celebrationMessage && (
@@ -473,6 +499,14 @@ export default function WatermelonPage() {
                   <div className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold border border-green-200">
                     {playerNickname}
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300"
+                    title="로그아웃"
+                  >
+                    🚪
+                  </button>
                 </div>
               )}
               <div className="flex-1 min-w-0">

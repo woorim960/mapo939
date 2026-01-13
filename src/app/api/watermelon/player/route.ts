@@ -2,11 +2,13 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
 
     if (!nickname) {
       return NextResponse.json({ error: "nickname_required" }, { status: 400 });
@@ -16,14 +18,81 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "nickname_too_long" }, { status: 400 });
     }
 
-    // 닉네임으로 플레이어 찾기 또는 생성
-    const player = await prisma.watermelonPlayer.upsert({
+    if (!password) {
+      return NextResponse.json({ error: "password_required" }, { status: 400 });
+    }
+
+    if (password.length < 4) {
+      return NextResponse.json({ error: "password_too_short" }, { status: 400 });
+    }
+
+    // 기존 플레이어 확인
+    const existingPlayer = await prisma.watermelonPlayer.findUnique({
       where: { nickname },
-      update: {
-        updatedAt: new Date(),
-      },
-      create: {
+    });
+
+    if (existingPlayer) {
+      // 기존 플레이어가 있으면 패스워드 확인
+      if (!existingPlayer.passwordHash) {
+        // 기존 플레이어에 패스워드가 없으면 (마이그레이션 이전 데이터)
+        // 패스워드를 설정할 수 없으므로 에러 반환
+        return NextResponse.json({ error: "invalid_password" }, { status: 401 });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, existingPlayer.passwordHash);
+      if (!passwordMatch) {
+        return NextResponse.json({ error: "invalid_password" }, { status: 401 });
+      }
+
+      // 패스워드가 일치하면 기존 플레이어 정보 반환
+      const player = await prisma.watermelonPlayer.findUnique({
+        where: { id: existingPlayer.id },
+        include: {
+          scores: {
+            orderBy: { score: "desc" },
+            take: 1,
+          },
+          _count: {
+            select: { scores: true },
+          },
+        },
+      });
+
+      if (!player) {
+        return NextResponse.json({ error: "player_not_found" }, { status: 404 });
+      }
+
+      // 통계 계산
+      const bestScore = player.scores[0]?.score ?? 0;
+      const playCount = player._count.scores;
+
+      const allScores = await prisma.watermelonScore.findMany({
+        where: { playerId: player.id },
+        select: { score: true },
+      });
+
+      const averageScore =
+        allScores.length > 0
+          ? Math.round(allScores.reduce((sum, s) => sum + s.score, 0) / allScores.length)
+          : 0;
+
+      return NextResponse.json({
+        player: {
+          id: player.id,
+          nickname: player.nickname,
+          bestScore,
+          averageScore,
+          playCount,
+        },
+      });
+    }
+
+    // 기존 플레이어가 없으면 새로 생성 (자동 회원가입)
+    const passwordHash = await bcrypt.hash(password, 10);
+    const player = await prisma.watermelonPlayer.create({
+      data: {
         nickname,
+        passwordHash,
       },
       include: {
         scores: {

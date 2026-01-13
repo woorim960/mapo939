@@ -21,9 +21,10 @@ export type LeaderboardEntry = {
 };
 
 // 플레이어 생성/조회
-export async function createOrGetPlayer(nickname: string): Promise<WatermelonPlayer> {
+export async function createOrGetPlayer(nickname: string, password: string): Promise<WatermelonPlayer> {
   const data = await apiPost<{ player: WatermelonPlayer }>("/api/watermelon/player", {
     nickname,
+    password,
   });
   return data.player;
 }
