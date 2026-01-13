@@ -61,7 +61,7 @@ export const GAME_CONFIG = {
   gameOverLineMargin: 50, // 게임 오버 라인 Y축 위치 (픽셀 단위, 작을수록 위에 위치)
   gameOverLineWarningHeight: 20, // 경고 배경 그라데이션 높이 (픽셀 단위, 라인 아래로 확장)
   gameOverLineTextOffset: 12, // 경고 텍스트 오프셋 (픽셀 단위, 라인 위로)
-  gameOverVelocityThreshold: 0.01, // 게임 오버 체크용 속도 임계값 (픽셀/프레임 단위)
+  gameOverVelocityThreshold: 0.05, // 게임 오버 체크용 속도 임계값 (픽셀/프레임 단위)
   // 설명: 게임 오버 라인 체크 시, 과일이 정지 상태인지 판단하는 기준입니다.
   // - 과일의 Y축 속도(velocity.y)의 절댓값이 이 값보다 작으면 "정지 상태"로 간주합니다.
   // - 떨어지고 있는 과일은 게임 오버 체크에서 제외됩니다 (과일이 떨어지는 중에는 게임 오버가 발생하지 않음).

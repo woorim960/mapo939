@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     }
 
     // 결제 내역 조회
-    const payment = await prisma.watermelonPayment.findFirst({
+    const payment = await prisma.watermelonPayment.findUnique({
       where: { orderId },
       include: {
         item: true,

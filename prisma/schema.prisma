@@ -192,7 +192,7 @@ model WatermelonPayment {
   amount        Int // 결제 금액
   paymentMethod String // 결제 수단 ("toss", "card", "account" 등)
   paymentKey    String? // 토스페이먼츠 결제 키
-  orderId       String? // 주문 ID
+  orderId       String? @unique // 주문 ID (unique로 변경)
   status        String // "pending", "completed", "failed", "refunded"
   metadata      Json? // 추가 정보 (결제 상세 정보)
   createdAt     DateTime @default(now())
@@ -202,7 +202,6 @@ model WatermelonPayment {
   item     WatermelonItem?         @relation(fields: [itemId], references: [id])
   purchase WatermelonItemPurchase?
 
-  @@unique([orderId])
   @@index([playerId])
   @@index([paymentKey])
   @@index([status])

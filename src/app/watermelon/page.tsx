@@ -771,14 +771,15 @@ export default function WatermelonPage() {
       <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} />
 
       {/* 아이템 상점 모달 */}
-      <ItemShopModal
-        open={showItemShop}
-        onClose={() => setShowItemShop(false)}
-        onPurchaseSuccess={() => {
-          setToast("아이템 구매가 완료되었습니다! 🎉");
-        }}
-        playerId={playerId || undefined}
-      />
+          <ItemShopModal
+            open={showItemShop}
+            onClose={() => setShowItemShop(false)}
+            onPurchaseSuccess={() => {
+              setToast("아이템 구매가 완료되었습니다! 🎉");
+            }}
+            onToast={(message) => setToast(message)}
+            playerId={playerId || undefined}
+          />
 
       {/* 통계 모달 */}
       <StatsModal

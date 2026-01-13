@@ -19,25 +19,23 @@ export function LogoutConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200"
-      style={{ height: '100dvh' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label="로그아웃 확인"
     >
       <div
-        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 flex flex-col"
-        style={{ maxHeight: 'calc(100dvh - 1rem)' }}
+        className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b-2 border-orange-200/50 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 px-4 sm:px-5 py-3 sm:py-4 rounded-t-2xl flex-shrink-0">
+        <div className="flex items-center justify-between border-b-2 border-orange-200/50 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 px-5 py-4 rounded-t-2xl">
           <div className="text-xl font-bold bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 bg-clip-text text-transparent flex items-center gap-2">
             <span className="text-2xl">🚪</span>
             <span>로그아웃</span>
           </div>
         </div>
 
-        <div className="px-4 sm:px-5 py-4 sm:py-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 py-6 space-y-4">
           <div className="rounded-lg bg-yellow-50 border-2 border-yellow-200 p-3 space-y-1.5">
             <div className="text-xs font-semibold text-yellow-800 flex items-center gap-1.5">
               <span>⚠️</span>

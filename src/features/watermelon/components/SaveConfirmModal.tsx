@@ -21,20 +21,18 @@ export function SaveConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-300"
-      style={{ height: '100dvh' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-300"
       onMouseDown={onCancel}
       role="dialog"
       aria-modal="true"
       aria-label="점수 저장 확인"
     >
       <div
-        className="w-full max-w-md rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-xl shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 overflow-hidden flex flex-col"
-        style={{ maxHeight: 'calc(100dvh - 1rem)' }}
+        className="w-full max-w-md rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-xl shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
-        <div className="relative bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 sm:px-6 py-4 sm:py-5 overflow-hidden flex-shrink-0">
+        <div className="relative bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-6 py-5 overflow-hidden">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48Y2lyY2xlIGN4PSIzMCIgY3k9IjMwIiByPSIyIi8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -56,9 +54,9 @@ export function SaveConfirmModal({
           </div>
         </div>
 
-        <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-3 sm:space-y-4 bg-gradient-to-b from-transparent to-gray-50/30 overflow-y-auto flex-1 min-h-0">
+        <div className="px-6 py-6 space-y-4 bg-gradient-to-b from-transparent to-gray-50/30">
           {/* 현재 점수 표시 */}
-          <div className="relative rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 p-4 sm:p-6 shadow-xl border-2 border-blue-400/40 overflow-hidden">
+          <div className="relative rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 p-6 shadow-xl border-2 border-blue-400/40 overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
             <div className="relative">
@@ -66,7 +64,7 @@ export function SaveConfirmModal({
                 <span>⭐</span>
                 <span>현재 점수</span>
               </div>
-              <div className="text-4xl sm:text-5xl font-extrabold text-white drop-shadow-lg">{score.toLocaleString()}</div>
+              <div className="text-5xl font-extrabold text-white drop-shadow-lg">{score.toLocaleString()}</div>
             </div>
           </div>
 
@@ -97,7 +95,7 @@ export function SaveConfirmModal({
         </div>
 
         {/* 푸터 버튼 */}
-        <div className="px-4 sm:px-6 py-4 sm:py-5 bg-gradient-to-b from-gray-50/50 to-white border-t border-gray-200/50 flex gap-2 sm:gap-3 flex-shrink-0">
+        <div className="px-6 py-5 bg-gradient-to-b from-gray-50/50 to-white border-t border-gray-200/50 flex gap-3">
           <button
             className="flex-1 rounded-xl bg-gradient-to-r from-gray-400 to-gray-500 px-5 py-3.5 text-base font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 border-2 border-gray-300/30"
             onClick={onCancel}
