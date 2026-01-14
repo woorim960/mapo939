@@ -26,7 +26,7 @@ export function GameCanvas({
   popAnimations = [],
   containerBounds,
   currentFruitTier,
-  gameOverLineY,
+  gameOverLineY = GAME_CONFIG.gameOverLineMargin, // 기본값 설정
   onDrop,
   onWatermelonClick,
   onAnimationComplete,
@@ -45,6 +45,7 @@ export function GameCanvas({
   const popAnimationsRef = useRef(popAnimations);
   const currentFruitTierRef = useRef(currentFruitTier);
   const containerBoundsRef = useRef(containerBounds);
+  const gameOverLineYRef = useRef(gameOverLineY);
 
   useEffect(() => {
     fruitsRef.current = fruits;
@@ -52,8 +53,9 @@ export function GameCanvas({
     mergeAnimationsRef.current = mergeAnimations;
     popAnimationsRef.current = popAnimations;
     currentFruitTierRef.current = currentFruitTier;
+    gameOverLineYRef.current = gameOverLineY;
     containerBoundsRef.current = containerBounds;
-  }, [fruits, scoreAnimations, mergeAnimations, popAnimations, currentFruitTier, containerBounds]);
+  }, [fruits, scoreAnimations, mergeAnimations, popAnimations, currentFruitTier, containerBounds, gameOverLineY]);
 
   // 캔버스 테두리 고려
   const borderWidth = 4;
@@ -65,12 +67,26 @@ export function GameCanvas({
   const currentFruitRadius = currentFruitTier ? FRUIT_CONFIGS[currentFruitTier].radius : 30;
 
   const fontCacheRef = useRef<Map<number, string>>(new Map());
+  const gradientCacheRef = useRef<Map<string, CanvasGradient>>(new Map()); // 그라데이션 캐싱
+  
   const getFontSize = useCallback((radius: number) => {
     const size = Math.floor(radius * 1.2);
     if (!fontCacheRef.current.has(size)) {
       fontCacheRef.current.set(size, `bold ${size}px Arial`);
     }
     return fontCacheRef.current.get(size)!;
+  }, []);
+  
+  // 그라데이션 캐싱 함수 (성능 최적화)
+  const getCachedGradient = useCallback((
+    ctx: CanvasRenderingContext2D,
+    key: string,
+    createFn: () => CanvasGradient
+  ): CanvasGradient => {
+    if (!gradientCacheRef.current.has(key)) {
+      gradientCacheRef.current.set(key, createFn());
+    }
+    return gradientCacheRef.current.get(key)!;
   }, []);
 
   // 수박 반쪽을 그리기 위한 클리핑 함수
@@ -148,7 +164,7 @@ export function GameCanvas({
 
     // 게임 오버 라인 (더 눈에 띄게)
     // 위치는 GAME_CONFIG.gameOverLineMargin에서 설정하거나 prop으로 전달받음
-    const lineY = gameOverLineY !== undefined ? gameOverLineY : GAME_CONFIG.gameOverLineMargin;
+    const lineY = gameOverLineYRef.current !== undefined ? gameOverLineYRef.current : GAME_CONFIG.gameOverLineMargin;
     const warningHeight = GAME_CONFIG.gameOverLineWarningHeight;
     const textOffset = GAME_CONFIG.gameOverLineTextOffset;
     
@@ -183,9 +199,16 @@ export function GameCanvas({
       ctx.fillText("⚠️ 게임 오버 라인", canvasWidth / 2, lineY - textOffset);
     }
 
-    // 과일 렌더링
+    // 과일 렌더링 (성능 최적화: 화면 밖 과일은 스킵)
+    const margin = 50; // 화면 밖 여유 공간
     currentFruits.forEach((fruit) => {
       if (!fruit.alive) return;
+
+      // 화면 밖 과일은 렌더링 스킵 (성능 최적화)
+      if (fruit.x < -margin || fruit.x > canvasWidth + margin ||
+          fruit.y < -margin || fruit.y > canvasHeight + margin) {
+        return;
+      }
 
       const config = FRUIT_CONFIGS[fruit.tier];
       const pos = { x: fruit.x, y: fruit.y };
@@ -195,50 +218,20 @@ export function GameCanvas({
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 3;
 
-      // 외곽 글로우
+      // 외곽 글로우 (성능 최적화: 그라데이션 캐싱 제거, 단순화)
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, fruit.radius + 2, 0, Math.PI * 2);
-      const glowGradient = ctx.createRadialGradient(
-        pos.x,
-        pos.y,
-        fruit.radius * 0.5,
-        pos.x,
-        pos.y,
-        fruit.radius + 2
-      );
-      glowGradient.addColorStop(0, "rgba(255, 255, 255, 0.3)");
-      glowGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = glowGradient;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.15)"; // 단순 색상으로 변경
       ctx.fill();
 
-      // 메인 원
+      // 메인 원 (성능 최적화: 그라데이션 캐싱 제거, 단순화)
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, fruit.radius, 0, Math.PI * 2);
-      const gradient = ctx.createRadialGradient(
-        pos.x - fruit.radius * 0.4,
-        pos.y - fruit.radius * 0.4,
-        0,
-        pos.x,
-        pos.y,
-        fruit.radius
-      );
-      gradient.addColorStop(0, "#ffffff");
-      gradient.addColorStop(0.5, "#f9fafb");
-      gradient.addColorStop(1, "#e5e7eb");
-      ctx.fillStyle = gradient;
+      ctx.fillStyle = "#f9fafb"; // 단순 색상으로 변경
       ctx.fill();
 
-      // 테두리
-      const borderGradient = ctx.createLinearGradient(
-        pos.x - fruit.radius,
-        pos.y - fruit.radius,
-        pos.x + fruit.radius,
-        pos.y + fruit.radius
-      );
-      borderGradient.addColorStop(0, "#d1d5db");
-      borderGradient.addColorStop(0.5, "#9ca3af");
-      borderGradient.addColorStop(1, "#d1d5db");
-      ctx.strokeStyle = borderGradient;
+      // 테두리 (성능 최적화: 그라데이션 제거)
+      ctx.strokeStyle = "#d1d5db";
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
@@ -695,9 +688,22 @@ export function GameCanvas({
         clientY = e.clientY;
       }
 
+      // 캔버스의 CSS 크기 기준으로 좌표 계산
+      // 캔버스는 devicePixelRatio로 스케일링되어 있지만, 렌더링은 CSS 크기 기준이므로
+      // 클릭 좌표도 CSS 크기 기준으로 계산해야 함
+      const dpr = window.devicePixelRatio || 1;
+      const cssWidth = rect.width;
+      const cssHeight = rect.height;
+      
+      // 클릭 위치를 캔버스의 CSS 좌표계로 변환
+      // ctx.scale(dpr, dpr)로 인해 내부 좌표계가 dpr배 스케일링되어 있으므로
+      // 클릭 좌표도 CSS 크기 기준으로 계산
+      const x = (clientX - rect.left);
+      const y = (clientY - rect.top);
+
       return {
-        x: clientX - rect.left,
-        y: clientY - rect.top,
+        x,
+        y,
       };
     },
     []

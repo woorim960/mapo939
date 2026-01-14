@@ -214,7 +214,7 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
       {/* 연결 모달 - Portal로 body에 직접 렌더링 */}
       {showConnectModal && typeof window !== 'undefined' && createPortal(
         <div 
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4" 
+          className="fixed z-[200] flex items-center justify-center p-4" 
           style={{ 
             position: 'fixed', 
             top: 0, 
@@ -222,12 +222,16 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
             right: 0, 
             bottom: 0,
             margin: 0,
-            padding: '1rem',
+            // 모바일 safe area 적용
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
           }}
         >
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-200 opacity-100"
+            className="absolute bg-black/50 backdrop-blur-sm transition-opacity duration-200 opacity-100"
             onClick={() => {
               setShowConnectModal(false);
               setError("");
@@ -250,6 +254,8 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
               zIndex: 201,
               margin: 'auto',
               transform: 'translate(0, 0)',
+              // 모바일 safe area를 고려한 max-height 계산
+              maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -335,7 +341,7 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
       {/* 연결 해제 모달 - Portal로 body에 직접 렌더링 */}
       {showDisconnectModal && typeof window !== 'undefined' && createPortal(
         <div 
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4" 
+          className="fixed z-[200] flex items-center justify-center p-4" 
           style={{ 
             position: 'fixed', 
             top: 0, 
@@ -343,12 +349,16 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
             right: 0, 
             bottom: 0,
             margin: 0,
-            padding: '1rem',
+            // 모바일 safe area 적용
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
           }}
         >
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-200 opacity-100"
+            className="absolute bg-black/50 backdrop-blur-sm transition-opacity duration-200 opacity-100"
             onClick={() => {
               setShowDisconnectModal(false);
               setError("");
@@ -371,6 +381,8 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
               zIndex: 201,
               margin: 'auto',
               transform: 'translate(0, 0)',
+              // 모바일 safe area를 고려한 max-height 계산
+              maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
             }}
             onClick={(e) => e.stopPropagation()}
           >

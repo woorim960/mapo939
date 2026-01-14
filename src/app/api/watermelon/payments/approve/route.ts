@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getItemById } from "@/features/watermelon/utils/items";
 
 export async function POST(req: Request) {
   try {
@@ -17,9 +18,6 @@ export async function POST(req: Request) {
     // 결제 내역 조회
     const payment = await prisma.watermelonPayment.findUnique({
       where: { orderId },
-      include: {
-        item: true,
-      },
     });
 
     if (!payment) {
@@ -33,6 +31,12 @@ export async function POST(req: Request) {
     // 금액 검증
     if (payment.amount !== amount) {
       return NextResponse.json({ error: "amount_mismatch" }, { status: 400 });
+    }
+
+    // 하드코딩된 아이템 목록에서 아이템 정보 가져오기
+    const item = payment.itemId ? getItemById(payment.itemId) : null;
+    if (!item) {
+      return NextResponse.json({ error: "item_not_found" }, { status: 404 });
     }
 
     // 토스페이먼츠 결제 승인 API 호출
@@ -128,7 +132,13 @@ export async function POST(req: Request) {
       success: true,
       paymentId: payment.id,
       purchaseId: purchase.id,
-      item: payment.item,
+      item: {
+        id: item.id,
+        name: item.name,
+        effectType: item.effectType,
+        effectValue: item.effectValue,
+        icon: item.icon,
+      },
       quantity,
     });
   } catch (error) {

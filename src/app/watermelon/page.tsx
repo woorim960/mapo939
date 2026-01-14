@@ -17,6 +17,7 @@ import { LogoutConfirmModal } from "@/features/watermelon/components/LogoutConfi
 import { MenuButton } from "@/features/watermelon/components/MenuButton";
 import { ItemShopModal } from "@/features/watermelon/components/ItemShopModal";
 import { PlayerDashboard } from "@/features/watermelon/components/PlayerDashboard";
+import { ChangeNextFruitModal } from "@/features/watermelon/components/ChangeNextFruitModal";
 import { Toast } from "@/shared/components/Toast";
 import { createOrGetPlayer } from "@/features/watermelon/api";
 import { getLS, setLS, removeLS } from "@/shared/utils/storage";
@@ -52,6 +53,7 @@ export default function WatermelonPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showItemShop, setShowItemShop] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showChangeNextFruit, setShowChangeNextFruit] = useState(false);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [toast, setToast] = useState("");
   const [currentScoreTier, setCurrentScoreTier] = useState(0); // 현재 도달한 점수 단계
@@ -61,7 +63,7 @@ export default function WatermelonPage() {
   const [textCompactMode, setTextCompactMode] = useState<{ currentMax: number; average: number; next: number }>({ currentMax: 0, average: 0, next: 0 }); // 0: 전체, 1: "최대" 제거, 2: "현재"도 제거
   const currentMaxRef = useRef<HTMLDivElement>(null);
   const averageRef = useRef<HTMLDivElement>(null);
-  const nextFruitRef = useRef<HTMLDivElement>(null);
+  const nextFruitRef = useRef<HTMLButtonElement>(null);
 
   // 닉네임 확인 및 플레이어 로드
   useEffect(() => {
@@ -288,57 +290,14 @@ export default function WatermelonPage() {
 
   const colorTheme = getColorTheme();
 
-  // 게임 오버 상태 감지 및 extra_life 아이템 자동 사용
+  // 게임 오버 상태 감지
   useEffect(() => {
     if (game.isGameOver && !showGameOver && !gameOverModalDismissed) {
-      // extra_life 아이템 자동 사용 체크
-      const useExtraLife = async () => {
-        if (!playerId) {
-          const wasNewRecord = game.score >= game.bestScore && game.score > 0;
-          setIsNewRecord(wasNewRecord);
-          setShowGameOver(true);
-          return;
-        }
-
-        try {
-          // 인벤토리에서 extra_life 아이템 찾기
-          const { getInventory } = await import("@/features/watermelon/api");
-          const inventory = await getInventory(playerId);
-          const extraLifeItem = inventory.find(
-            (item) => item.item.effectType === "extra_life" && item.quantity > 0
-          );
-
-          if (extraLifeItem) {
-            // extra_life 아이템 사용
-            const { useItem } = await import("@/features/watermelon/api");
-            try {
-              await useItem(playerId, extraLifeItem.item.id, 1);
-              
-              // 게임 재시작 (추가 생명으로 계속)
-              game.resetGame();
-              setShowGameOver(false);
-              setIsNewRecord(false);
-              setGameOverModalDismissed(false);
-              setToast("💚 추가 생명으로 게임을 계속합니다!");
-              return;
-            } catch (error) {
-              console.error("Failed to use extra life:", error);
-              // 아이템 사용 실패해도 게임 오버 처리
-            }
-          }
-        } catch (error) {
-          console.error("Failed to check/use extra life:", error);
-        }
-
-        // extra_life가 없으면 일반 게임 오버 처리
-        const wasNewRecord = game.score >= game.bestScore && game.score > 0;
-        setIsNewRecord(wasNewRecord);
-        setShowGameOver(true);
-      };
-
-      useExtraLife();
+      const wasNewRecord = game.score >= game.bestScore && game.score > 0;
+      setIsNewRecord(wasNewRecord);
+      setShowGameOver(true);
     }
-  }, [game.isGameOver, game.score, game.bestScore, showGameOver, gameOverModalDismissed, playerId, game]);
+  }, [game.isGameOver, game.score, game.bestScore, showGameOver, gameOverModalDismissed]);
 
   // 화면 크기에 맞춰 컨테이너 크기 조정 (스크롤 절대 방지)
   useEffect(() => {
@@ -816,7 +775,12 @@ export default function WatermelonPage() {
                 )}
               </div>
             </div>
-            <NextFruit ref={nextFruitRef} fruitLevel={game.nextTier} hideText={textCompactMode.next === 1} />
+            <NextFruit 
+              ref={nextFruitRef} 
+              fruitLevel={game.nextTier} 
+              hideText={textCompactMode.next === 1}
+              onClick={() => setShowChangeNextFruit(true)}
+            />
           </div>
         </header>
 
@@ -911,6 +875,7 @@ export default function WatermelonPage() {
         onToast={(message) => setToast(message)}
         playerId={playerId || undefined}
         gamePoints={gamePoints}
+        gameOverLineItemUsed={game.gameOverLineItemUsed}
         memberId={memberId}
         onItemEffect={(effectType, effectValue, itemIcon, itemName) => {
           // 게임 훅의 아이템 효과 적용 함수 호출
@@ -939,6 +904,7 @@ export default function WatermelonPage() {
           open={showDashboard}
           onClose={() => setShowDashboard(false)}
           playerId={playerId}
+          onToast={(message) => setToast(message)}
         />
       )}
 
@@ -957,6 +923,30 @@ export default function WatermelonPage() {
         onCancel={() => setShowSaveConfirm(false)}
       />
 
+      {/* 다음 과일 변경 모달 */}
+      {playerId && (
+        <ChangeNextFruitModal
+          open={showChangeNextFruit}
+          onClose={() => setShowChangeNextFruit(false)}
+          currentTier={game.nextTier}
+          maxUnlockedTier={game.maxUnlockedTier}
+          playerId={playerId}
+          gamePoints={gamePoints}
+          onSuccess={(newTier) => {
+            if (game.setNextTier) {
+              game.setNextTier(newTier);
+            }
+          }}
+          onToast={(message) => setToast(message)}
+          onPointsUpdate={(newPoints) => {
+            setGamePoints(newPoints);
+            if (playerId) {
+              loadPlayerStats(playerId);
+            }
+          }}
+        />
+      )}
+
       {/* 로그아웃 확인 모달 */}
       <LogoutConfirmModal
         open={showLogoutConfirm}
@@ -968,8 +958,8 @@ export default function WatermelonPage() {
       {/* 게임 오버 모달 */}
       <GameOverModal
         open={showGameOver}
-        score={game.score}
-        bestScore={game.bestScore}
+        score={game.score ?? 0}
+        bestScore={game.bestScore ?? 0}
         isNewRecord={isNewRecord}
         playerId={playerId}
         onRestart={handleRestart}

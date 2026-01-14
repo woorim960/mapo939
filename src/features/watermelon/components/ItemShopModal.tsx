@@ -3,7 +3,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getItems, purchaseWithPoints, getAttendancePoints, type WatermelonItem } from "../api";
+import { purchaseWithPoints, getAttendancePoints } from "../api";
+import { FRUIT_CONFIGS } from "../utils/config";
+import type { FruitTier } from "../types";
+import { getAllItems, type WatermelonItem } from "../utils/items";
 
 type ItemShopModalProps = {
   open: boolean;
@@ -14,6 +17,7 @@ type ItemShopModalProps = {
   gamePoints?: number; // 현재 보유 수박게임 포인트
   memberId?: string; // 출석부 연결 여부
   onItemEffect?: (effectType: string, effectValue: any, itemIcon?: string, itemName?: string) => string | null; // 아이템 효과 적용 함수
+  gameOverLineItemUsed?: boolean; // 게임 오버 라인 아이템 사용 여부
 };
 
 export function ItemShopModal({
@@ -25,9 +29,9 @@ export function ItemShopModal({
   gamePoints = 0,
   memberId,
   onItemEffect,
+  gameOverLineItemUsed = false,
 }: ItemShopModalProps) {
-  const [items, setItems] = useState<WatermelonItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [items] = useState<WatermelonItem[]>(getAllItems());
   const [error, setError] = useState("");
   const [selectedItem, setSelectedItem] = useState<WatermelonItem | null>(null);
   const [showPointSelection, setShowPointSelection] = useState(false);
@@ -36,6 +40,29 @@ export function ItemShopModal({
   const [purchasing, setPurchasing] = useState(false);
   const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
   const [pendingPurchase, setPendingPurchase] = useState<{ item: WatermelonItem; pointType: "game" | "attendance" } | null>(null);
+  const [showFruitSelection, setShowFruitSelection] = useState(false);
+  const [pendingFruitSelection, setPendingFruitSelection] = useState<{ item: WatermelonItem; pointType: "game" | "attendance" } | null>(null);
+  const [selectedFruitTier, setSelectedFruitTier] = useState<FruitTier | null>(null);
+
+  // 아이템 이름 정규화 (DB에 저장된 이름을 올바른 이름으로 매핑)
+  const normalizeItemName = (item: WatermelonItem): string => {
+    if (item.effectType === "lower_game_over_line") {
+      // 기존 이름 "게임 오버 라인 하향"을 "게임 오버 라인 상향"으로 변경
+      if (item.name === "게임 오버 라인 하향") {
+        return "게임 오버 라인 상향";
+      }
+    }
+    return item.name;
+  };
+
+  // 아이템 설명 정규화
+  const normalizeItemDescription = (item: WatermelonItem): string | null => {
+    if (item.effectType === "lower_game_over_line") {
+      // 올바른 설명으로 교체
+      return "게임 오버 라인을 최고 위로 올립니다. 게임당 한 번만 사용 가능하며, 게임 종료까지 효과가 유지됩니다.";
+    }
+    return item.description;
+  };
 
   // 모달이 열릴 때 body 스크롤 방지, 닫힐 때 복원
   useEffect(() => {
@@ -46,7 +73,6 @@ export function ItemShopModal({
       document.body.style.position = "fixed";
       document.body.style.width = "100%";
 
-      loadItems();
       if (playerId && memberId) {
         loadAttendancePoints();
       }
@@ -62,20 +88,6 @@ export function ItemShopModal({
       };
     }
   }, [open, playerId, memberId]);
-
-  const loadItems = async () => {
-    try {
-      setLoading(true);
-      setError("");
-      const itemsData = await getItems();
-      setItems(itemsData);
-    } catch (err) {
-      console.error("Failed to load items:", err);
-      setError("아이템 목록을 불러오는데 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadAttendancePoints = async () => {
     if (!playerId) return;
@@ -100,6 +112,20 @@ export function ItemShopModal({
       setError("로그인이 필요합니다.");
       return;
     }
+
+    // 게임 오버 라인 상향 아이템은 이미 사용되었으면 구매 불가
+    if (item.effectType === "lower_game_over_line" && gameOverLineItemUsed) {
+      setError("이미 사용한 아이템입니다. 게임당 한 번만 사용할 수 있습니다.");
+      return;
+    }
+
+    // 다음 과일 지정 아이템은 과일 선택 모달 표시
+    if (item.effectType === "select_next_fruit") {
+      setPendingFruitSelection({ item, pointType: memberId && attendancePoints !== null ? "attendance" : "game" });
+      setShowFruitSelection(true);
+      return;
+    }
+
     setSelectedItem(item);
     setError("");
 
@@ -113,18 +139,29 @@ export function ItemShopModal({
     }
   };
 
-  const handlePurchaseWithPoints = async (item: WatermelonItem, pointType: "game" | "attendance") => {
+  const handlePurchaseWithPoints = async (item: WatermelonItem, pointType: "game" | "attendance", selectedTier?: number) => {
     if (!playerId) {
       setError("로그인이 필요합니다.");
       return;
     }
 
-    if (pointType === "game" && (gamePoints ?? 0) < item.price) {
+    // 게임 오버 라인 상향 아이템은 이미 사용되었으면 구매 불가
+    if (item.effectType === "lower_game_over_line" && gameOverLineItemUsed) {
+      setError("이미 사용한 아이템입니다. 게임당 한 번만 사용할 수 있습니다.");
+      return;
+    }
+
+    // 다음 과일 지정 아이템은 동적 가격 (선택한 과일의 레벨 x 10)
+    const itemPrice = item.effectType === "select_next_fruit" && selectedTier !== undefined
+      ? selectedTier * 10
+      : item.price;
+
+    if (pointType === "game" && (gamePoints ?? 0) < itemPrice) {
       setError("수박게임 포인트가 부족합니다.");
       return;
     }
 
-    if (pointType === "attendance" && (attendancePoints ?? 0) < item.price) {
+    if (pointType === "attendance" && (attendancePoints ?? 0) < itemPrice) {
       setError("출석 포인트가 부족합니다.");
       return;
     }
@@ -133,33 +170,7 @@ export function ItemShopModal({
       setPurchasing(true);
       setError("");
 
-      const result = await purchaseWithPoints(playerId, item.id, pointType, 1);
-
-      // 아이템 효과 적용 (extra_life 제외 - 게임 오버 시 자동 사용)
-      let effectMessage: string | null = null;
-      if (onItemEffect && result.item.effectType && result.item.effectType !== "extra_life") {
-        effectMessage = onItemEffect(
-          result.item.effectType, 
-          result.item.effectValue,
-          result.item.icon || item.icon || undefined,
-          result.item.name || item.name || undefined
-        );
-      }
-
-      if (onPurchaseSuccess) {
-        onPurchaseSuccess();
-      }
-
-      // 토스트 메시지 (효과 메시지가 있으면 효과 메시지 우선, 없으면 구매 완료 메시지)
-      if (onToast) {
-        if (effectMessage) {
-          onToast(`${item.icon || "🎁"} ${item.name} 구매 완료! ${effectMessage}`);
-        } else if (result.item.effectType === "extra_life") {
-          onToast(`${item.icon || "🎁"} ${item.name} 구매 완료! 게임 오버 시 자동으로 사용됩니다.`);
-        } else {
-          onToast(`${item.icon || "🎁"} ${item.name} 구매 완료!`);
-        }
-      }
+      const result = await purchaseWithPoints(playerId, item.id, pointType, 1, selectedTier);
 
       // 출석 포인트 갱신
       if (pointType === "attendance" && memberId) {
@@ -169,8 +180,70 @@ export function ItemShopModal({
       setSelectedItem(null);
       setShowPointSelection(false);
       
-      // 구매 완료 후 모달 즉시 닫기 (아이템 효과를 볼 수 있도록)
-      onClose();
+      // 과일 제거 아이템은 모달이 닫힌 후 실행
+      const isRemoveFruitsItem = result.item.effectType === "remove_fruits";
+      
+      if (isRemoveFruitsItem) {
+        // 모달 먼저 닫기
+        onClose();
+        
+        // 모달 애니메이션 완료 후 아이템 효과 적용 (300ms 딜레이)
+        setTimeout(() => {
+          if (onItemEffect && result.item.effectType) {
+            const normalizedResultItem = {
+              ...result.item,
+              name: normalizeItemName({ ...item, ...result.item } as WatermelonItem),
+            };
+            const effectMessage = onItemEffect(
+              result.item.effectType, 
+              result.item.effectValue || (selectedTier !== undefined ? { tier: selectedTier } : null),
+              result.item.icon || item.icon || undefined,
+              normalizedResultItem.name || normalizeItemName(item) || undefined
+            );
+            
+            // 토스트 메시지
+            if (onToast && effectMessage) {
+              onToast(`${item.icon || "🎁"} ${normalizeItemName(item)} 구매 완료! ${effectMessage}`);
+            }
+          }
+          
+          if (onPurchaseSuccess) {
+            onPurchaseSuccess();
+          }
+        }, 300);
+      } else {
+        // 다른 아이템은 즉시 효과 적용
+        let effectMessage: string | null = null;
+        if (onItemEffect && result.item.effectType) {
+          // result.item을 정규화된 이름으로 변환
+          const normalizedResultItem = {
+            ...result.item,
+            name: normalizeItemName({ ...item, ...result.item } as WatermelonItem),
+          };
+          effectMessage = onItemEffect(
+            result.item.effectType, 
+            result.item.effectValue || (selectedTier !== undefined ? { tier: selectedTier } : null),
+            result.item.icon || item.icon || undefined,
+            normalizedResultItem.name || normalizeItemName(item) || undefined
+          );
+        }
+
+        if (onPurchaseSuccess) {
+          onPurchaseSuccess();
+        }
+
+        // 토스트 메시지 (효과 메시지가 있으면 효과 메시지 우선, 없으면 구매 완료 메시지)
+        if (onToast) {
+          if (effectMessage) {
+            onToast(`${item.icon || "🎁"} ${normalizeItemName(item)} 구매 완료! ${effectMessage}`);
+          } else {
+            onToast(`${item.icon || "🎁"} ${normalizeItemName(item)} 구매 완료!`);
+          }
+        }
+        
+        // 구매 완료 후 모달 즉시 닫기
+        onClose();
+      }
     } catch (err: any) {
       console.error("Purchase failed:", err);
       const errorMessage = err?.message || "구매에 실패했습니다.";
@@ -198,15 +271,47 @@ export function ItemShopModal({
     setShowPurchaseConfirm(false);
     const itemToPurchase = pendingPurchase.item;
     const pointTypeToUse = pendingPurchase.pointType;
+    const tierToUse = selectedFruitTier; // 다음 과일 지정 아이템인 경우 선택한 tier 사용
     setPendingPurchase(null);
+    setSelectedFruitTier(null);
     
     // 구매 실행 (구매 완료 후 모달이 자동으로 닫힘)
-    await handlePurchaseWithPoints(itemToPurchase, pointTypeToUse);
+    await handlePurchaseWithPoints(itemToPurchase, pointTypeToUse, tierToUse ?? undefined);
+  };
+
+  const handleFruitSelect = (tier: FruitTier) => {
+    if (!pendingFruitSelection) return;
+    
+    const item = pendingFruitSelection.item;
+    const pointType = pendingFruitSelection.pointType;
+    const price = tier * 10;
+    
+    // 포인트 확인
+    if (pointType === "game" && (gamePoints ?? 0) < price) {
+      setError("수박게임 포인트가 부족합니다.");
+      return;
+    }
+    
+    if (pointType === "attendance" && (attendancePoints ?? 0) < price) {
+      setError("출석 포인트가 부족합니다.");
+      return;
+    }
+    
+    // 과일 선택 후 구매 확인 모달 표시
+    setSelectedFruitTier(tier);
+    setShowFruitSelection(false);
+    setPendingPurchase({ item, pointType });
+    setShowPurchaseConfirm(true);
   };
 
   const handleCancelPurchase = () => {
     setShowPurchaseConfirm(false);
     setPendingPurchase(null);
+    setSelectedFruitTier(null);
+    // 다음 과일 지정 아이템인 경우 과일 선택 모달로 돌아가기
+    if (pendingFruitSelection) {
+      setShowFruitSelection(true);
+    }
   };
 
   // 아이템 효과 설명 텍스트 생성
@@ -214,14 +319,14 @@ export function ItemShopModal({
     if (!item.effectType) return "";
     
     switch (item.effectType) {
-      case "extra_life":
-        return "게임 오버 시 자동으로 한 번 더 기회를 드립니다.";
-      case "slow_gravity":
-        return "과일이 천천히 떨어집니다 (30초간 지속).";
+      case "select_next_fruit":
+        return "원하는 과일을 선택하여 다음에 떨어지도록 지정합니다. 가격은 선택한 과일의 레벨 x 10입니다.";
       case "bonus_score":
         return "획득하는 점수가 2배가 됩니다 (30초간 지속).";
       case "remove_fruits":
-        if (item.effectValue?.position === "bottom") {
+        if (item.effectValue?.position === "top") {
+          return "화면 상단의 과일 3개가 즉시 제거됩니다.";
+        } else if (item.effectValue?.position === "bottom") {
           return "화면 하단의 과일 3개가 즉시 제거됩니다.";
         } else {
           return "화면의 랜덤 과일 5개가 즉시 제거됩니다.";
@@ -237,7 +342,7 @@ export function ItemShopModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label="아이템 상점"
@@ -253,10 +358,19 @@ export function ItemShopModal({
       }}
       style={{
         touchAction: "none",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        // 모바일 safe area 적용
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
       }}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 max-h-[90vh] flex flex-col"
+        className="w-full max-w-2xl rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300 flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => {
           e.stopPropagation();
@@ -266,6 +380,8 @@ export function ItemShopModal({
           touchAction: "pan-y",
           position: "relative",
           zIndex: 50,
+          // 모바일 safe area를 고려한 max-height 계산
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
         }}
       >
         <div className="flex items-center justify-between border-b-2 border-purple-200/50 bg-gradient-to-r from-purple-50 to-pink-50 px-5 py-4 rounded-t-2xl sticky top-0 z-10 flex-shrink-0">
@@ -310,9 +426,11 @@ export function ItemShopModal({
                 <div className="flex items-center gap-3 mb-4">
                   <div className="text-4xl">{selectedItem.icon || "🎁"}</div>
                   <div>
-                    <div className="font-bold text-xl text-gray-800">{selectedItem.name}</div>
+                    <div className="font-bold text-xl text-gray-800">{normalizeItemName(selectedItem)}</div>
                     <div className="text-lg font-bold text-purple-600">
-                      {selectedItem.price.toLocaleString()}P
+                      {selectedItem.effectType === "select_next_fruit" 
+                        ? "레벨 x 10" 
+                        : `${selectedItem.price.toLocaleString()}P`}
                     </div>
                   </div>
                 </div>
@@ -325,10 +443,16 @@ export function ItemShopModal({
                 <button
                   type="button"
                   onClick={() => {
-                    setPendingPurchase({ item: selectedItem, pointType: "game" });
-                    setShowPurchaseConfirm(true);
+                    // 다음 과일 지정 아이템은 과일 선택 모달 표시
+                    if (selectedItem.effectType === "select_next_fruit") {
+                      setPendingFruitSelection({ item: selectedItem, pointType: "game" });
+                      setShowFruitSelection(true);
+                    } else {
+                      setPendingPurchase({ item: selectedItem, pointType: "game" });
+                      setShowPurchaseConfirm(true);
+                    }
                   }}
-                  disabled={purchasing || (gamePoints ?? 0) < selectedItem.price}
+                  disabled={purchasing || (selectedItem.effectType === "select_next_fruit" ? false : (gamePoints ?? 0) < selectedItem.price)}
                   className="w-full rounded-xl border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50 p-4 hover:shadow-lg transition-all duration-200 text-left disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center justify-between">
@@ -340,7 +464,7 @@ export function ItemShopModal({
                     </div>
                     <div className="text-2xl">🍉</div>
                   </div>
-                  {(gamePoints ?? 0) < selectedItem.price && (
+                  {selectedItem.effectType !== "select_next_fruit" && (gamePoints ?? 0) < selectedItem.price && (
                     <div className="mt-2 text-xs text-red-600">포인트가 부족합니다</div>
                   )}
                 </button>
@@ -350,10 +474,16 @@ export function ItemShopModal({
                   <button
                     type="button"
                     onClick={() => {
-                      setPendingPurchase({ item: selectedItem, pointType: "attendance" });
-                      setShowPurchaseConfirm(true);
+                      // 다음 과일 지정 아이템은 과일 선택 모달 표시
+                      if (selectedItem.effectType === "select_next_fruit") {
+                        setPendingFruitSelection({ item: selectedItem, pointType: "attendance" });
+                        setShowFruitSelection(true);
+                      } else {
+                        setPendingPurchase({ item: selectedItem, pointType: "attendance" });
+                        setShowPurchaseConfirm(true);
+                      }
                     }}
-                    disabled={purchasing || loadingAttendancePoints || attendancePoints < selectedItem.price}
+                    disabled={purchasing || loadingAttendancePoints || (selectedItem.effectType === "select_next_fruit" ? false : attendancePoints < selectedItem.price)}
                     className="w-full rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 hover:shadow-lg transition-all duration-200 text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="flex items-center justify-between">
@@ -372,7 +502,7 @@ export function ItemShopModal({
                       </div>
                       <div className="text-2xl">📋</div>
                     </div>
-                    {attendancePoints < selectedItem.price && (
+                    {selectedItem.effectType !== "select_next_fruit" && attendancePoints < selectedItem.price && (
                       <div className="mt-2 text-xs text-red-600">포인트가 부족합니다</div>
                     )}
                   </button>
@@ -425,11 +555,7 @@ export function ItemShopModal({
                 </div>
               )}
 
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-gray-500">로딩 중...</div>
-                </div>
-              ) : error ? (
+              {error ? (
                 <div className="rounded-lg bg-red-50 border-2 border-red-200 p-4 text-red-700 text-center">
                   {error}
                 </div>
@@ -437,38 +563,57 @@ export function ItemShopModal({
                 <div className="text-center py-12 text-gray-500">아이템이 없습니다.</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border-2 border-purple-200 bg-gradient-to-br from-white to-purple-50/30 p-4 hover:shadow-lg transition-all duration-200"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="text-4xl flex-shrink-0">{item.icon || "🎁"}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-lg text-gray-800 mb-1">{item.name}</div>
-                          {item.description && (
-                            <div className="text-sm text-gray-600 mb-3">{item.description}</div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <div className="text-lg font-bold text-purple-600">
-                              {item.price.toLocaleString()}P
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePurchase(item);
-                              }}
-                              disabled={!playerId}
-                              className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm hover:from-purple-600 hover:to-pink-600 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
-                            >
-                              구매하기
-                            </button>
+                  {items.map((item) => {
+                    // 게임 오버 라인 상향 아이템이 이미 사용되었는지 확인
+                    const isGameOverLineItemUsed = item.effectType === "lower_game_over_line" && gameOverLineItemUsed;
+                    const isDisabled = !playerId || isGameOverLineItemUsed;
+                    
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-xl border-2 p-4 transition-all duration-200 flex flex-col ${
+                          isGameOverLineItemUsed
+                            ? "border-gray-300 bg-gradient-to-br from-gray-100 to-gray-200/50 opacity-60"
+                            : "border-purple-200 bg-gradient-to-br from-white to-purple-50/30 hover:shadow-lg"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 flex-1">
+                          <div className="text-4xl flex-shrink-0">{item.icon || "🎁"}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-lg text-gray-800 mb-1">{normalizeItemName(item)}</div>
+                            {normalizeItemDescription(item) && (
+                              <div className="text-sm text-gray-600 mb-3">{normalizeItemDescription(item)}</div>
+                            )}
+                            {isGameOverLineItemUsed && (
+                              <div className="text-xs text-red-600 font-semibold mb-2 bg-red-50 border border-red-200 rounded-lg px-2 py-1 inline-block">
+                                ⚠️ 이미 사용한 아이템입니다
+                              </div>
+                            )}
                           </div>
                         </div>
+                        <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-200">
+                          <div className="text-lg font-bold text-purple-600">
+                            {item.effectType === "select_next_fruit" 
+                              ? "레벨 x 10" 
+                              : `${item.price.toLocaleString()}P`}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isDisabled) {
+                                handlePurchase(item);
+                              }
+                            }}
+                            disabled={isDisabled}
+                            className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm hover:from-purple-600 hover:to-pink-600 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+                          >
+                            {isGameOverLineItemUsed ? "사용 완료" : "구매하기"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -479,23 +624,40 @@ export function ItemShopModal({
       {/* 구매 확인 모달 */}
       {showPurchaseConfirm && pendingPurchase && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          className="fixed z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
           role="dialog"
           aria-modal="true"
           aria-label="구매 확인"
+          style={{
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            // 모바일 safe area 적용
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          }}
         >
           <div
             className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
+            style={{
+              // 모바일 safe area를 고려한 max-height 계산
+              maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
+            }}
           >
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="text-4xl">{pendingPurchase.item.icon || "🎁"}</div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-800 mb-1">{pendingPurchase.item.name}</h3>
+                  <h3 className="text-xl font-bold text-gray-800 mb-1">{normalizeItemName(pendingPurchase.item)}</h3>
                   <div className="text-lg font-bold text-purple-600">
-                    {pendingPurchase.item.price.toLocaleString()}P
+                    {pendingPurchase.item.effectType === "select_next_fruit" && selectedFruitTier !== null
+                      ? `${(selectedFruitTier * 10).toLocaleString()}P`
+                      : `${pendingPurchase.item.price.toLocaleString()}P`}
                   </div>
                 </div>
               </div>
@@ -513,11 +675,22 @@ export function ItemShopModal({
                   </div>
                 </div>
 
-                {pendingPurchase.item.description && (
-                  <div className="text-sm text-gray-600 mb-2">
-                    {pendingPurchase.item.description}
-                  </div>
-                )}
+                  {pendingPurchase.item.effectType === "select_next_fruit" && selectedFruitTier !== null && (
+                    <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="text-4xl">{FRUIT_CONFIGS[selectedFruitTier].emoji}</div>
+                        <div>
+                          <div className="font-bold text-purple-800">{FRUIT_CONFIGS[selectedFruitTier].name}</div>
+                          <div className="text-sm text-purple-600">가격: {selectedFruitTier * 10}P</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {normalizeItemDescription(pendingPurchase.item) && (
+                    <div className="text-sm text-gray-600 mb-2">
+                      {normalizeItemDescription(pendingPurchase.item)}
+                    </div>
+                  )}
 
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
                   <div className="flex items-start gap-2">
@@ -548,6 +721,91 @@ export function ItemShopModal({
                 >
                   {purchasing ? "구매 중..." : "구매 및 사용"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 과일 선택 모달 (다음 과일 지정 아이템용) */}
+      {showFruitSelection && pendingFruitSelection && (
+        <div
+          className="fixed z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-label="과일 선택"
+          style={{
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            // 모바일 safe area 적용
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            style={{
+              // 모바일 safe area를 고려한 max-height 계산
+              maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
+            }}
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent flex items-center gap-2">
+                  <span className="text-2xl">🎯</span>
+                  <span>과일 선택</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFruitSelection(false);
+                    setPendingFruitSelection(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/50 transition-colors"
+                  aria-label="닫기"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mb-4 text-sm text-gray-600">
+                다음에 떨어질 과일을 선택하세요. 가격은 선택한 과일의 레벨 x 10입니다.
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
+                {([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as FruitTier[]).map((tier) => {
+                  const config = FRUIT_CONFIGS[tier];
+                  const price = tier * 10;
+                  const canAfford = pendingFruitSelection.pointType === "game"
+                    ? (gamePoints ?? 0) >= price
+                    : (attendancePoints ?? 0) >= price;
+                  
+                  return (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => handleFruitSelect(tier)}
+                      disabled={!canAfford || purchasing}
+                      className={`rounded-xl border-2 p-4 flex flex-col items-center justify-center gap-2 transition-all duration-200 ${
+                        canAfford && !purchasing
+                          ? "border-purple-300 bg-gradient-to-br from-white to-purple-50/30 hover:shadow-lg hover:scale-105 active:scale-95"
+                          : "border-gray-300 bg-gray-100 opacity-60 cursor-not-allowed"
+                      }`}
+                    >
+                      <div className="text-4xl">{config.emoji}</div>
+                      <div className="text-xs font-semibold text-gray-700">{config.name}</div>
+                      <div className={`text-sm font-bold ${canAfford ? "text-purple-600" : "text-gray-400"}`}>
+                        {price}P
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

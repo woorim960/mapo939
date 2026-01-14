@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getItemById } from "@/features/watermelon/utils/items";
 
 // UUID 생성 헬퍼 함수
 function generateOrderId(): string {
@@ -21,12 +22,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "invalid_input" }, { status: 400 });
     }
 
-    // 아이템 정보 조회
-    const item = await prisma.watermelonItem.findUnique({
-      where: { id: itemId },
-    });
-
-    if (!item || !item.isActive) {
+    // 아이템 정보 조회 (하드코딩된 목록에서)
+    const item = getItemById(itemId);
+    if (!item) {
       return NextResponse.json({ error: "item_not_found" }, { status: 404 });
     }
 

@@ -46,10 +46,24 @@ export function Modal({ children, onClose }: ModalProps) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+    <div 
+      className="fixed z-[100] flex items-center justify-center p-4" 
+      style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        bottom: 0,
+        // 모바일 safe area 적용
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
+    >
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-200 ${
+        className={`absolute bg-black/50 backdrop-blur-sm transition-opacity duration-200 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
         onClick={handleBackdropClick}
@@ -57,12 +71,19 @@ export function Modal({ children, onClose }: ModalProps) {
         role="button"
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        style={{ 
+          position: 'absolute', 
+          // 모바일 safe area 적용
+          top: 'env(safe-area-inset-top, 0)',
+          bottom: 'env(safe-area-inset-bottom, 0)',
+          left: 'env(safe-area-inset-left, 0)',
+          right: 'env(safe-area-inset-right, 0)',
+        }}
       />
       
       {/* Modal Content */}
       <div
-        className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
+        className={`relative w-full max-w-md overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
           isVisible
             ? "opacity-100 scale-100 translate-y-0"
             : "opacity-0 scale-95 translate-y-4"
@@ -71,6 +92,8 @@ export function Modal({ children, onClose }: ModalProps) {
           position: 'relative',
           zIndex: 101,
           margin: 'auto',
+          // 모바일 safe area를 고려한 max-height 계산
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

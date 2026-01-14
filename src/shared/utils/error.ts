@@ -64,13 +64,20 @@ export function handleUnknownError(err: unknown): string {
 
 /**
  * 에러 로깅 (개발 환경에서만)
- * room_not_found 같은 예상된 에러는 로깅하지 않음
+ * room_not_found, insufficient_quantity 같은 예상된 에러는 로깅하지 않음
  */
 export function logError(context: string, err: unknown): void {
   if (process.env.NODE_ENV === "development") {
-    // room_not_found 같은 예상된 에러는 로깅하지 않음 (polling 중 정상적으로 발생할 수 있음)
-    if (err instanceof ApiError && (err.code === "room_not_found" || err.status === 404)) {
-      return;
+    // 예상된 에러는 로깅하지 않음
+    if (err instanceof ApiError) {
+      // room_not_found: polling 중 정상적으로 발생할 수 있음
+      if (err.code === "room_not_found" || err.status === 404) {
+        return;
+      }
+      // insufficient_quantity: extra_life 아이템 사용 시 race condition으로 정상적으로 발생할 수 있음
+      if (err.message === "insufficient_quantity") {
+        return;
+      }
     }
     console.error(`[${context}]`, err);
   }

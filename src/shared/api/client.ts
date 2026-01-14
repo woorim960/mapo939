@@ -23,7 +23,10 @@ export async function apiRequest<T>(
       const error = await extractApiError(res);
       const apiError = new ApiError(error.error, res.status, error.code, error.message);
       
-      if (!skipErrorLog) {
+      // insufficient_quantity는 예상된 에러이므로 로그하지 않음 (extra_life 아이템 사용 시 정상적으로 발생할 수 있음)
+      const isExpectedError = error.error === "insufficient_quantity";
+      
+      if (!skipErrorLog && !isExpectedError) {
         logError(`API Request Failed: ${url}`, apiError);
       }
       

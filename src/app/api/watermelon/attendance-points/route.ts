@@ -30,6 +30,12 @@ export async function GET(req: Request) {
       });
     }
 
+    // 멤버 정보 조회
+    const member = await prisma.member.findUnique({
+      where: { id: player.memberId },
+      select: { id: true, name: true },
+    }).catch(() => null); // 멤버가 없어도 계속 진행
+
     // 출석 포인트 계산 (사용 내역 제외)
     let usedPoints = { _sum: { pointsUsed: 0 } };
     
@@ -75,6 +81,7 @@ export async function GET(req: Request) {
       totalUsed,
       connected: true,
       memberId: player.memberId,
+      memberName: member?.name || null,
     });
   } catch (error: any) {
     console.error("Get attendance points API error:", error);

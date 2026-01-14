@@ -75,6 +75,35 @@ export async function GET(req: Request) {
 
       // 포인트 정보 조회
       const gamePoints = player.gamePoints ?? 1000;
+      
+      // 수박 게임 포인트 총 획득 및 사용 내역 계산
+      const [paymentTotal, purchaseTotal] = await Promise.all([
+        // 결제로 획득한 포인트 (완료된 결제만)
+        prisma.watermelonPayment.aggregate({
+          where: {
+            playerId,
+            status: "completed",
+          },
+          _sum: {
+            amount: true,
+          },
+        }),
+        // 게임 포인트로 구매한 내역 (사용 포인트)
+        prisma.watermelonItemPurchase.aggregate({
+          where: {
+            playerId,
+            pointType: "game",
+            pointsUsed: { not: null },
+          },
+          _sum: {
+            pointsUsed: true,
+          },
+        }),
+      ]);
+      
+      const totalEarnedGamePoints = 1000 + (paymentTotal._sum.amount ?? 0); // 초기 1000 + 결제 획득
+      const totalUsedGamePoints = purchaseTotal._sum.pointsUsed ?? 0;
+      
       let attendancePoints = 0;
       
       if (player.memberId) {
@@ -116,6 +145,8 @@ export async function GET(req: Request) {
         playCount,
         recentScores,
         gamePoints,
+        gamePointsTotalEarned: totalEarnedGamePoints,
+        gamePointsTotalUsed: totalUsedGamePoints,
         attendancePoints,
         memberId: player.memberId,
       };

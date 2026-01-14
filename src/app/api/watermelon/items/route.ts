@@ -1,28 +1,12 @@
-// 수박게임 아이템 목록 조회 API
+// 수박게임 아이템 목록 조회 API (하드코딩된 목록 사용)
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getAllItems } from "@/features/watermelon/utils/items";
 
 export async function GET() {
   try {
-    // 활성화된 아이템만 조회 (정렬 순서대로)
-    const items = await prisma.watermelonItem.findMany({
-      where: {
-        isActive: true,
-      },
-      orderBy: {
-        sortOrder: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        price: true,
-        effectType: true,
-        effectValue: true,
-        icon: true,
-      },
-    });
+    // 하드코딩된 아이템 목록 반환
+    const items = getAllItems();
 
     return NextResponse.json({
       items,

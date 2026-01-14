@@ -11,6 +11,8 @@ export type WatermelonPlayer = {
   averageMaxTier?: number;
   recentScores?: number[];
   gamePoints?: number;
+  gamePointsTotalEarned?: number;
+  gamePointsTotalUsed?: number;
   attendancePoints?: number;
   memberId?: string;
 };
@@ -75,10 +77,11 @@ export type InventoryItem = {
   item: WatermelonItem;
 };
 
-// 아이템 목록 조회
+// 아이템 목록 조회 (하드코딩된 목록 사용)
 export async function getItems(): Promise<WatermelonItem[]> {
-  const data = await apiGet<{ items: WatermelonItem[] }>("/api/watermelon/items");
-  return data.items;
+  // 더 이상 사용되지 않지만 하위 호환성을 위해 유지
+  const { getAllItems } = await import("../utils/items");
+  return getAllItems();
 }
 
 // 플레이어 인벤토리 조회
@@ -93,13 +96,18 @@ export async function getInventory(playerId: string): Promise<InventoryItem[]> {
 export async function useItem(
   playerId: string,
   itemId: string,
-  quantity: number = 1
+  quantity: number = 1,
+  options?: { skipErrorLog?: boolean }
 ): Promise<{ success: boolean; item: WatermelonItem; quantity: number; remainingQuantity: number }> {
-  const data = await apiPost<{ success: boolean; item: WatermelonItem; quantity: number; remainingQuantity: number }>("/api/watermelon/items/use", {
-    playerId,
-    itemId,
-    quantity,
-  });
+  const data = await apiPost<{ success: boolean; item: WatermelonItem; quantity: number; remainingQuantity: number }>(
+    "/api/watermelon/items/use",
+    {
+      playerId,
+      itemId,
+      quantity,
+    },
+    options
+  );
   return data;
 }
 
@@ -128,13 +136,15 @@ export async function purchaseWithPoints(
   playerId: string,
   itemId: string,
   pointType: "game" | "attendance",
-  quantity: number = 1
+  quantity: number = 1,
+  selectedTier?: number // 다음 과일 지정 아이템용
 ): Promise<{ success: boolean; item: { id: string; name: string; quantity: number; effectType?: string; effectValue?: any; icon?: string }; pointType: string }> {
   const data = await apiPost<{ success: boolean; item: { id: string; name: string; quantity: number; effectType?: string; effectValue?: any; icon?: string }; pointType: string }>("/api/watermelon/purchase", {
     playerId,
     itemId,
     pointType,
     quantity,
+    ...(selectedTier !== undefined && { selectedTier }),
   });
   return data;
 }
@@ -144,6 +154,7 @@ export async function getAttendancePoints(playerId: string): Promise<{
   attendancePoints: number;
   connected: boolean;
   memberId?: string;
+  memberName?: string | null;
   totalEarned?: number;
   totalUsed?: number;
 } | null> {
@@ -152,6 +163,7 @@ export async function getAttendancePoints(playerId: string): Promise<{
       attendancePoints: number;
       connected: boolean;
       memberId?: string;
+      memberName?: string | null;
       totalEarned?: number;
       totalUsed?: number;
     }>(`/api/watermelon/attendance-points?playerId=${encodeURIComponent(playerId)}`);

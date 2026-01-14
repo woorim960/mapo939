@@ -18,12 +18,13 @@ async function main() {
 
   // 가격 매핑 (이름으로 매칭하여 가격 업데이트)
   const priceMap: Record<string, number> = {
-    "추가 생명": 100,
     "중력 감소": 50,
     "점수 2배": 80,
     "하단 과일 제거": 120,
     "랜덤 과일 제거": 150,
-    "게임 오버 라인 하향": 200,
+    "게임 오버 라인 하향": 200, // 기존 이름 (하위 호환성)
+    "게임 오버 라인 상향": 200, // 새 이름
+    "다음 과일 지정": 0, // 동적 가격 (레벨 x 10)
   };
 
   // 기존 아이템 가격 업데이트
@@ -44,12 +45,12 @@ async function main() {
 
   const items = [
     {
-      name: "추가 생명",
-      description: "게임 오버 시 한 번 더 기회를 줍니다",
-      price: 100,
-      effectType: "extra_life",
-      effectValue: { count: 1 },
-      icon: "💚",
+      name: "다음 과일 지정",
+      description: "원하는 과일을 선택하여 다음에 떨어지도록 지정합니다. 가격은 선택한 과일의 레벨 x 10입니다.",
+      price: 0, // 동적 가격 (레벨 x 10)
+      effectType: "select_next_fruit",
+      effectValue: null, // 사용 시 선택
+      icon: "🎯",
       sortOrder: 1,
       isActive: true,
     },
@@ -94,7 +95,7 @@ async function main() {
       isActive: true,
     },
     {
-      name: "게임 오버 라인 하향",
+      name: "게임 오버 라인 상향",
       description: "게임 오버 라인을 최고 위로 올립니다. 게임당 한 번만 사용 가능하며, 게임 종료까지 효과가 유지됩니다.",
       price: 200,
       effectType: "lower_game_over_line",
@@ -109,15 +110,28 @@ async function main() {
   let createdCount = 0;
   let updatedCount = 0;
   
+  // extra_life 아이템 삭제
+  await prisma.watermelonItem.deleteMany({
+    where: { effectType: "extra_life" },
+  });
+  console.log("🗑️ 추가 생명 아이템 삭제 완료");
+
   for (const item of items) {
+    // 기존 이름("게임 오버 라인 하향")도 찾아서 업데이트
     const existing = await prisma.watermelonItem.findFirst({
-      where: { name: item.name },
+      where: {
+        OR: [
+          { name: item.name },
+          { name: "게임 오버 라인 하향", effectType: "lower_game_over_line" }, // 기존 이름으로도 찾기
+        ],
+      },
     });
 
     if (existing) {
       await prisma.watermelonItem.update({
         where: { id: existing.id },
         data: {
+          name: item.name, // 이름도 업데이트
           price: item.price,
           description: item.description,
           effectType: item.effectType,

@@ -8,13 +8,20 @@ import { FruitEmoji } from "./FruitEmoji";
 type NextFruitProps = {
   fruitLevel: FruitTier;
   hideText?: boolean;
+  onClick?: () => void;
 };
 
-export const NextFruit = forwardRef<HTMLDivElement, NextFruitProps>(({ fruitLevel, hideText = false }, ref) => {
+export const NextFruit = forwardRef<HTMLButtonElement, NextFruitProps>(({ fruitLevel, hideText = false, onClick }, ref) => {
   const config = FRUIT_CONFIGS[fruitLevel];
 
   return (
-    <div ref={ref} className="flex items-center gap-2 rounded-lg bg-blue-50/50 px-2.5 py-1.5 border border-blue-200/50 whitespace-nowrap">
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 rounded-lg bg-blue-50/50 px-2.5 py-1.5 border border-blue-200/50 whitespace-nowrap hover:bg-blue-100/70 hover:border-blue-300/70 active:scale-95 transition-all duration-200 cursor-pointer"
+      aria-label="다음 과일 변경"
+    >
       {!hideText && <div className="text-[10px] text-blue-700 font-medium">다음</div>}
       <div
         className="flex items-center justify-center"
@@ -24,7 +31,7 @@ export const NextFruit = forwardRef<HTMLDivElement, NextFruitProps>(({ fruitLeve
       >
         <FruitEmoji tier={fruitLevel} />
       </div>
-    </div>
+    </button>
   );
 });
 

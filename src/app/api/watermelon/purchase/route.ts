@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getItemById } from "@/features/watermelon/utils/items";
 
 type PointType = "game" | "attendance";
 
@@ -12,6 +13,7 @@ export async function POST(req: Request) {
     const itemId = typeof body.itemId === "string" ? body.itemId.trim() : "";
     const quantity = typeof body.quantity === "number" ? body.quantity : 1;
     const pointType: PointType = body.pointType === "attendance" ? "attendance" : "game";
+    const selectedTier = typeof body.selectedTier === "number" ? body.selectedTier : undefined; // 다음 과일 지정 아이템용
 
     if (!playerId || !itemId || quantity < 1) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
@@ -29,17 +31,20 @@ export async function POST(req: Request) {
         throw new Error("player_not_found");
       }
 
-      // 아이템 찾기
-      const item = await tx.watermelonItem.findUnique({
-        where: { id: itemId },
-        select: { id: true, price: true, name: true, isActive: true, effectType: true, effectValue: true, icon: true },
-      });
-
-      if (!item || !item.isActive) {
+      // 아이템 찾기 (하드코딩된 목록에서)
+      const item = getItemById(itemId);
+      if (!item) {
         throw new Error("item_not_found");
       }
 
-      const totalPrice = item.price * quantity;
+      // 다음 과일 지정 아이템은 동적 가격 (선택한 과일의 레벨 x 10)
+      let totalPrice = item.price * quantity;
+      if (item.effectType === "select_next_fruit") {
+        if (selectedTier === undefined || selectedTier < 0 || selectedTier > 10) {
+          throw new Error("invalid_tier");
+        }
+        totalPrice = selectedTier * 10 * quantity;
+      }
 
       // 포인트 확인 및 차감
       if (pointType === "game") {
@@ -154,23 +159,39 @@ export async function POST(req: Request) {
         }
       }
 
-      return { item, quantity, pointType };
+      return { quantity, pointType };
+    }, {
+      timeout: 10000, // 10초 타임아웃
     });
+
+    // 트랜잭션 완료 후 아이템 정보 다시 가져오기 (트랜잭션 외부에서)
+    const item = getItemById(itemId);
+    if (!item) {
+      throw new Error("item_not_found");
+    }
 
     return NextResponse.json({
       success: true,
       item: {
-        id: result.item.id,
-        name: result.item.name,
+        id: item.id,
+        name: item.name,
         quantity: result.quantity,
-        effectType: result.item.effectType,
-        effectValue: result.item.effectValue,
-        icon: result.item.icon,
+        effectType: item.effectType,
+        effectValue: item.effectType === "select_next_fruit" && selectedTier !== undefined
+          ? { tier: selectedTier }
+          : item.effectValue,
+        icon: item.icon,
       },
       pointType: result.pointType,
     });
   } catch (error: any) {
     console.error("Purchase item API error:", error);
+    console.error("Error details:", {
+      message: error?.message,
+      code: error?.code,
+      stack: error?.stack,
+      name: error?.name,
+    });
     
     const errorMessage = error.message || "internal_error";
     if (errorMessage === "player_not_found") {
@@ -184,6 +205,9 @@ export async function POST(req: Request) {
     }
     if (errorMessage === "not_connected") {
       return NextResponse.json({ error: "not_connected" }, { status: 400 });
+    }
+    if (errorMessage === "invalid_tier") {
+      return NextResponse.json({ error: "invalid_tier" }, { status: 400 });
     }
     
     return NextResponse.json({ error: "internal_error" }, { status: 500 });

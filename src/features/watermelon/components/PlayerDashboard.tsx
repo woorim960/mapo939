@@ -5,16 +5,18 @@
 import { useState, useEffect } from "react";
 import { getPlayerStats, getAttendancePoints } from "../api";
 import { Modal } from "@/shared/components/Modal";
+import { ChangeMemberModal } from "./ChangeMemberModal";
 
 type PlayerDashboardProps = {
   open: boolean;
   onClose: () => void;
   playerId: string;
+  onToast?: (message: string) => void;
 };
 
 type Period = "today" | "week" | "month" | "all";
 
-export function PlayerDashboard({ open, onClose, playerId }: PlayerDashboardProps) {
+export function PlayerDashboard({ open, onClose, playerId, onToast }: PlayerDashboardProps) {
   const [initialLoading, setInitialLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(false);
   const [period, setPeriod] = useState<Period>("all");
@@ -25,15 +27,20 @@ export function PlayerDashboard({ open, onClose, playerId }: PlayerDashboardProp
     playCount: number;
     averageMaxTier?: number | null;
     gamePoints?: number;
+    gamePointsTotalEarned?: number;
+    gamePointsTotalUsed?: number;
     attendancePoints?: number;
     memberId?: string;
   } | null>(null);
   const [attendancePointsData, setAttendancePointsData] = useState<{
     attendancePoints: number;
     connected: boolean;
+    memberId?: string;
+    memberName?: string | null;
     totalEarned?: number;
     totalUsed?: number;
   } | null>(null);
+  const [showChangeMember, setShowChangeMember] = useState(false);
 
   // 초기 로드 (모달 열릴 때)
   useEffect(() => {
@@ -133,27 +140,50 @@ export function PlayerDashboard({ open, onClose, playerId }: PlayerDashboardProp
 
             {/* 포인트 정보 */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 p-4">
+              <div className="rounded-xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 p-4 flex flex-col">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xl">🍉</span>
                   <div className="text-xs text-gray-600 font-semibold">수박게임 포인트</div>
                 </div>
-                <div className="text-2xl font-bold text-purple-600">
+                <div className="text-2xl font-bold text-purple-600 mb-1">
                   {(stats.gamePoints ?? 1000).toLocaleString()}P
                 </div>
+                {/* 연결된 멤버 정보와 같은 높이를 위한 빈 공간 */}
+                <div className="text-xs text-transparent mb-1" style={{ minHeight: '1.25rem' }}>
+                  {/* 높이 맞추기용 빈 공간 */}
+                </div>
+                {stats.gamePointsTotalEarned !== undefined && (
+                  <div className="text-xs text-gray-500 mt-auto">
+                    총 {stats.gamePointsTotalEarned.toLocaleString()}P (사용: {stats.gamePointsTotalUsed?.toLocaleString() || 0}P)
+                  </div>
+                )}
               </div>
 
               {stats.memberId && attendancePointsData?.connected ? (
-                <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+                <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 flex flex-col">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">📋</span>
                     <div className="text-xs text-gray-600 font-semibold">출석 포인트</div>
                   </div>
-                  <div className="text-2xl font-bold text-blue-600">
+                  <div className="text-2xl font-bold text-blue-600 mb-1">
                     {attendancePointsData.attendancePoints.toLocaleString()}P
                   </div>
+                  {attendancePointsData.memberName && (
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs text-blue-700 font-medium">
+                        연결된 멤버: {attendancePointsData.memberName}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowChangeMember(true)}
+                        className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 transition-colors"
+                      >
+                        변경
+                      </button>
+                    </div>
+                  )}
                   {attendancePointsData.totalEarned !== undefined && (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-500 mt-auto">
                       총 {attendancePointsData.totalEarned.toLocaleString()}P (사용: {attendancePointsData.totalUsed?.toLocaleString() || 0}P)
                     </div>
                   )}
@@ -284,6 +314,29 @@ export function PlayerDashboard({ open, onClose, playerId }: PlayerDashboardProp
           </>
         )}
       </div>
+
+      {/* 멤버 변경 모달 */}
+      {stats && (
+        <ChangeMemberModal
+          open={showChangeMember}
+          onClose={() => setShowChangeMember(false)}
+          currentMemberName={attendancePointsData?.memberName || null}
+          currentMemberId={stats.memberId}
+          playerId={playerId}
+          playerNickname={stats.nickname}
+          onSuccess={() => {
+            // 데이터 다시 로드
+            loadInitialData();
+          }}
+          onToast={(message) => {
+            if (onToast) {
+              onToast(message);
+            } else {
+              console.log(message);
+            }
+          }}
+        />
+      )}
     </Modal>
   );
 }

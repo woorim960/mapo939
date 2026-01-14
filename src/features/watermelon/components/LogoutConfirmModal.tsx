@@ -19,14 +19,29 @@ export function LogoutConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label="로그아웃 확인"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        // 모바일 safe area 적용
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
     >
       <div
         className="w-full max-w-md rounded-2xl border-2 border-white/50 bg-white/95 backdrop-blur-sm shadow-2xl animate-in zoom-in slide-in-from-bottom-2 duration-300"
         onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          // 모바일 safe area를 고려한 max-height 계산
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)',
+        }}
       >
         <div className="flex items-center justify-between border-b-2 border-orange-200/50 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 px-5 py-4 rounded-t-2xl">
           <div className="text-xl font-bold bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 bg-clip-text text-transparent flex items-center gap-2">

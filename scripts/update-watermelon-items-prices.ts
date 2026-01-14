@@ -21,15 +21,16 @@ if (!databaseUrl) {
 const adapter = new PrismaNeon({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter });
 
-// 가격 매핑 (10배 낮춘 가격)
-const priceMap: Record<string, number> = {
-  "추가 생명": 100,
-  "중력 감소": 50,
-  "점수 2배": 80,
-  "하단 과일 제거": 120,
-  "랜덤 과일 제거": 150,
-  "게임 오버 라인 하향": 200,
-};
+  // 가격 매핑 (10배 낮춘 가격)
+  const priceMap: Record<string, number> = {
+    "추가 생명": 100,
+    "중력 감소": 50,
+    "점수 2배": 80,
+    "하단 과일 제거": 120,
+    "랜덤 과일 제거": 150,
+    "게임 오버 라인 하향": 200, // 기존 이름 (하위 호환성)
+    "게임 오버 라인 상향": 200, // 새 이름
+  };
 
 async function main() {
   const isProd = !!process.env.PROD_DATABASE_URL;
@@ -51,14 +52,18 @@ async function main() {
   let updatedCount = 0;
   let skippedCount = 0;
 
-  for (const item of existingItems) {
-    const newPrice = priceMap[item.name];
-    
-    if (newPrice === undefined) {
-      console.log(`⚠️  알 수 없는 아이템: ${item.name} (스킵)`);
-      skippedCount++;
-      continue;
-    }
+          for (const item of existingItems) {
+            // 기존 이름("게임 오버 라인 하향")도 처리
+            let newPrice = priceMap[item.name];
+            if (newPrice === undefined && item.name === "게임 오버 라인 하향") {
+              newPrice = priceMap["게임 오버 라인 상향"]; // 새 이름으로 매핑
+            }
+            
+            if (newPrice === undefined) {
+              console.log(`⚠️  알 수 없는 아이템: ${item.name} (스킵)`);
+              skippedCount++;
+              continue;
+            }
 
     if (item.price === newPrice) {
       console.log(`⏭️  ${item.name}: 이미 가격이 ${newPrice}입니다. (스킵)`);

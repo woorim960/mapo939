@@ -128,7 +128,7 @@ model WatermelonPlayer {
   member                Member?                  @relation(fields: [memberId], references: [id], onDelete: SetNull)
   attendancePointsUsage AttendancePointsUsage[]
   scores                WatermelonScore[]
-  items                 WatermelonPlayerItem[]
+  playerItems           WatermelonPlayerItem[]
   payments              WatermelonPayment[]
   purchases             WatermelonItemPurchase[]
 
@@ -152,27 +152,6 @@ model WatermelonScore {
 }
 
 // 아이템 정의
-model WatermelonItem {
-  id          String   @id @default(uuid())
-  name        String // 아이템 이름
-  description String? // 설명
-  price       Int // 가격 (원)
-  effectType  String // 효과 타입 (예: "extra_life", "slow_gravity", "bonus_score", "remove_fruits")
-  effectValue Json? // 효과 값 (JSON)
-  icon        String? // 아이콘 이모지
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0) // 정렬 순서
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  playerItems           WatermelonPlayerItem[]
-  purchases             WatermelonItemPurchase[]
-  payments              WatermelonPayment[]
-  attendancePointsUsage AttendancePointsUsage[]
-
-  @@index([isActive, sortOrder])
-  @@map("watermelon_items")
-}
 
 // 플레이어의 아이템 보유량
 model WatermelonPlayerItem {
@@ -184,7 +163,6 @@ model WatermelonPlayerItem {
   updatedAt DateTime @updatedAt
 
   player WatermelonPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  item   WatermelonItem   @relation(fields: [itemId], references: [id])
 
   @@unique([playerId, itemId])
   @@index([playerId])
@@ -206,7 +184,6 @@ model WatermelonPayment {
   updatedAt     DateTime @updatedAt
 
   player   WatermelonPlayer        @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  item     WatermelonItem?         @relation(fields: [itemId], references: [id])
   purchase WatermelonItemPurchase?
 
   @@index([playerId])
@@ -227,7 +204,6 @@ model WatermelonItemPurchase {
   createdAt  DateTime @default(now())
 
   player                WatermelonPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  item                  WatermelonItem         @relation(fields: [itemId], references: [id])
   payment               WatermelonPayment?     @relation(fields: [paymentId], references: [id])
   attendancePointsUsage AttendancePointsUsage?
 
@@ -250,7 +226,6 @@ model AttendancePointsUsage {
 
   member   Member                 @relation(fields: [memberId], references: [id], onDelete: Cascade)
   player   WatermelonPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  item     WatermelonItem         @relation(fields: [itemId], references: [id])
   purchase WatermelonItemPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   @@index([memberId])

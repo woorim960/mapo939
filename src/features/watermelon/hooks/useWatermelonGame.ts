@@ -18,7 +18,7 @@ import {
   createFruitBody,
   removeFruitBody,
 } from "../utils/physics";
-import { playMergeSound, playDropSound, playGameOverSound } from "../utils/sound";
+import { playMergeSound, playDropSound, playGameOverSound, playPopSound, playCelebrationSound } from "../utils/sound";
 import { getLS, setLS, removeLS } from "@/shared/utils/storage";
 
 const BEST_SCORE_KEY = "watermelon_best_score";
@@ -82,13 +82,12 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
   const scoreMultiplierRef = useRef<number>(1); // 점수 배수 (기본 1배)
   const scoreMultiplierEndTimeRef = useRef<number>(0); // 점수 배수 종료 시간
   const scoreMultiplierStartTimeRef = useRef<number>(0); // 점수 배수 시작 시간
-  const gravityMultiplierRef = useRef<number>(1); // 중력 배수 (기본 1배)
-  const gravityMultiplierEndTimeRef = useRef<number>(0); // 중력 배수 종료 시간
-  const gravityMultiplierStartTimeRef = useRef<number>(0); // 중력 배수 시작 시간
   const gameOverLineOffsetRef = useRef<number>(0); // 게임 오버 라인 오프셋 (기본 0, 음수면 위로 올라감)
   const gameOverLineOffsetEndTimeRef = useRef<number>(0); // 게임 오버 라인 오프셋 종료 시간
   const gameOverLineOffsetStartTimeRef = useRef<number>(0); // 게임 오버 라인 오프셋 시작 시간
   const gameOverLineItemUsedRef = useRef<boolean>(false); // 게임 오버 라인 아이템 사용 여부 (게임당 한 번만)
+  const [gameOverLineItemUsed, setGameOverLineItemUsed] = useState<boolean>(false); // 게임 오버 라인 아이템 사용 여부 (UI 업데이트용)
+  const lastMilestoneRef = useRef<number>(0); // 마지막으로 달성한 점수 마일스톤 (500점 단위)
 
   // 점수 통계 로드 및 계산
   const loadAndCalculateStats = useCallback(() => {
@@ -204,6 +203,15 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     isSavingRef.current = false;
   }, [loadAndCalculateStats]);
 
+  // 점수 달성 마일스톤 체크 (500점, 1000점 단위)
+  const checkScoreMilestone = useCallback((newScore: number) => {
+    const milestone = Math.floor(newScore / 500) * 500; // 500점 단위로 내림
+    if (milestone > lastMilestoneRef.current && milestone >= 500) {
+      lastMilestoneRef.current = milestone;
+      playCelebrationSound();
+    }
+  }, []);
+
   // 초기 로드
   useEffect(() => {
     loadAndCalculateStats();
@@ -220,14 +228,6 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
       // 점수 배수 체크
       if (now >= scoreMultiplierEndTimeRef.current) {
         scoreMultiplierRef.current = 1;
-      }
-      
-      // 중력 배수 체크
-      if (now >= gravityMultiplierEndTimeRef.current) {
-        gravityMultiplierRef.current = 1;
-        if (engineRef.current) {
-          engineRef.current.world.gravity.y = PHYSICS_CONFIG.gravity.y;
-        }
       }
       
       // 게임 오버 라인 오프셋 체크 (영구 효과는 체크하지 않음)
@@ -247,9 +247,26 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
 
     createContainer(engine, containerBounds);
 
-    // 물리 시뮬레이션 루프
+    // 물리 시뮬레이션 루프 (성능 최적화: 과일 수에 따라 업데이트 빈도 조절)
+    let lastUpdateTime = 0;
     const run = () => {
-      Matter.Engine.update(engine);
+      const now = Date.now();
+      const fruitCount = fruitsRef.current.size;
+      
+      // 과일 수에 따라 물리 업데이트 빈도 조절
+      // 과일이 적을 때: 60fps (16ms), 많을 때: 30fps (33ms) 또는 20fps (50ms)
+      let updateInterval = 16; // 기본 60fps
+      if (fruitCount > 30) {
+        updateInterval = 33; // 30fps
+      } else if (fruitCount > 50) {
+        updateInterval = 50; // 20fps
+      }
+      
+      if (now - lastUpdateTime >= updateInterval) {
+        Matter.Engine.update(engine);
+        lastUpdateTime = now;
+      }
+      
       animationFrameRef.current = requestAnimationFrame(run);
     };
     run();
@@ -338,6 +355,7 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
             setScore((prev) => {
               const newScore = prev + points;
               scoreRef.current = newScore; // ref 업데이트
+              checkScoreMilestone(newScore); // 마일스톤 체크
               if (newScore > bestScoreRef.current) {
                 setBestScore(newScore);
                 bestScoreRef.current = newScore; // ref 업데이트
@@ -416,120 +434,144 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         fruitsByTier.get(fruit.tier)!.push(fruit);
       }
 
-      // 같은 tier 내에서만 체크
+      // 같은 tier 내에서만 체크 (공간 분할 최적화)
       for (const [tier, tierFruits] of fruitsByTier.entries()) {
         if (tierFruits.length < 2) continue;
         
-        for (let i = 0; i < tierFruits.length; i++) {
-          const fruitA = tierFruits[i];
-          if (!fruitA.bodyRef) continue;
+        // 공간 분할: 같은 tier 과일들을 그리드로 분할하여 가까운 것만 비교
+        const gridSize = 100; // 그리드 크기
+        const grid = new Map<string, Fruit[]>();
+        
+        // 그리드에 과일 배치
+        for (const fruit of tierFruits) {
+          if (!fruit.bodyRef) continue;
+          const gridX = Math.floor(fruit.bodyRef.position.x / gridSize);
+          const gridY = Math.floor(fruit.bodyRef.position.y / gridSize);
+          const key = `${gridX},${gridY}`;
           
-          for (let j = i + 1; j < tierFruits.length; j++) {
-            const fruitB = tierFruits[j];
-            if (!fruitB.bodyRef) continue;
+          if (!grid.has(key)) {
+            grid.set(key, []);
+          }
+          grid.get(key)!.push(fruit);
+        }
+        
+        // 같은 그리드 내에서만 비교 (공간 분할로 불필요한 비교 제거)
+        for (const [key, gridFruits] of grid.entries()) {
+          if (gridFruits.length < 2) continue;
+          
+          // 같은 그리드 내 과일들만 비교
+          for (let i = 0; i < gridFruits.length; i++) {
+            const fruitA = gridFruits[i];
+            if (!fruitA.bodyRef) continue;
             
-            const posA = fruitA.bodyRef.position;
-            const posB = fruitB.bodyRef.position;
-            // 거리 제곱으로 비교 (sqrt 제거로 성능 향상)
-            const dx = posA.x - posB.x;
-            const dy = posA.y - posB.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const maxDistance = (fruitA.radius + fruitB.radius) * GAME_CONFIG.secondaryMergeDistance;
-            const maxDistanceSquared = maxDistance * maxDistance;
-
-            if (distanceSquared <= maxDistanceSquared) {
-              // 합성 실행
-              mergingIdsRef.current.add(fruitA.id);
-              mergingIdsRef.current.add(fruitB.id);
-
-              const newTier = (tier + 1) as FruitTier;
-              const mergeX = (posA.x + posB.x) / 2;
-              const mergeY = (posA.y + posB.y) / 2;
-
-              // 최대 unlock 레벨 업데이트
-              setMaxUnlockedTier((prev) => {
-                if (newTier > prev) {
-                  return newTier;
-                }
-                return prev;
-              });
-
-              removeFruitBody(engine, fruitA.bodyRef);
-              removeFruitBody(engine, fruitB.bodyRef);
-
-              const newBody = createFruitBody(engine, newTier, mergeX, mergeY);
-              const newFruit: Fruit = {
-                id: `fruit_${Date.now()}_${Math.random()}`,
-                tier: newTier,
-                x: mergeX,
-                y: mergeY,
-                radius: FRUIT_CONFIGS[newTier].radius,
-                alive: true,
-                bodyRef: newBody,
-                spawnTime: nowSeconds,
-              };
-
-              // 배치 처리
-              requestAnimationFrame(() => {
-                setFruits((prev) => {
-                  const newMap = new Map(prev);
-                  newMap.delete(fruitA.id);
-                  newMap.delete(fruitB.id);
-                  newMap.set(newFruit.id, newFruit);
-                  fruitsRef.current = newMap;
-                  fruitsByBodyRef.current.delete(fruitA.bodyRef!);
-                  fruitsByBodyRef.current.delete(fruitB.bodyRef!);
-                  fruitsByBodyRef.current.set(newBody, newFruit);
-                  return newMap;
-                });
-
-                const basePoints = newTier * GAME_CONFIG.scoreMultiplier;
-                const points = Math.floor(basePoints * scoreMultiplierRef.current);
-                setScore((prev) => {
-                  const newScore = prev + points;
-                  scoreRef.current = newScore;
-                  if (newScore > bestScoreRef.current) {
-                    setBestScore(newScore);
-                    bestScoreRef.current = newScore;
-                    setLS(BEST_SCORE_KEY, newScore.toString());
-                  }
-                  return newScore;
-                });
-
-                const isWatermelon = newTier === 10;
-                setMergeAnimations((prev) => [
-                  ...prev,
-                  {
-                    id: `merge_${Date.now()}`,
-                    x: mergeX,
-                    y: mergeY,
-                    startTime: Date.now(),
-                    duration: isWatermelon ? 1200 : 500,
-                    tier: newTier,
-                  },
-                ]);
-
-                setScoreAnimations((prev) => [
-                  ...prev,
-                  {
-                    id: `score_${Date.now()}`,
-                    x: mergeX,
-                    y: mergeY,
-                    score: points,
-                    startTime: Date.now(),
-                    duration: 1000,
-                  },
-                ]);
-
-                playMergeSound();
-
-                setTimeout(() => {
-                  mergingIdsRef.current.delete(fruitA.id);
-                  mergingIdsRef.current.delete(fruitB.id);
-                }, 500);
-              });
+            for (let j = i + 1; j < gridFruits.length; j++) {
+              const fruitB = gridFruits[j];
+              if (!fruitB.bodyRef) continue;
               
-              return; // 한 번에 하나씩만 합성
+              const posA = fruitA.bodyRef.position;
+              const posB = fruitB.bodyRef.position;
+              // 거리 제곱으로 비교 (sqrt 제거로 성능 향상)
+              const dx_pos = posA.x - posB.x;
+              const dy_pos = posA.y - posB.y;
+              const distanceSquared = dx_pos * dx_pos + dy_pos * dy_pos;
+              const maxDistance = (fruitA.radius + fruitB.radius) * GAME_CONFIG.secondaryMergeDistance;
+              const maxDistanceSquared = maxDistance * maxDistance;
+
+              if (distanceSquared <= maxDistanceSquared) {
+                // 합성 실행
+                mergingIdsRef.current.add(fruitA.id);
+                mergingIdsRef.current.add(fruitB.id);
+
+                const newTier = (tier + 1) as FruitTier;
+                const mergeX = (posA.x + posB.x) / 2;
+                const mergeY = (posA.y + posB.y) / 2;
+
+                // 최대 unlock 레벨 업데이트
+                setMaxUnlockedTier((prev) => {
+                  if (newTier > prev) {
+                    return newTier;
+                  }
+                  return prev;
+                });
+
+                removeFruitBody(engine, fruitA.bodyRef);
+                removeFruitBody(engine, fruitB.bodyRef);
+
+                const newBody = createFruitBody(engine, newTier, mergeX, mergeY);
+                const newFruit: Fruit = {
+                  id: `fruit_${Date.now()}_${Math.random()}`,
+                  tier: newTier,
+                  x: mergeX,
+                  y: mergeY,
+                  radius: FRUIT_CONFIGS[newTier].radius,
+                  alive: true,
+                  bodyRef: newBody,
+                  spawnTime: nowSeconds,
+                };
+
+                // 배치 처리
+                requestAnimationFrame(() => {
+                  setFruits((prev) => {
+                    const newMap = new Map(prev);
+                    newMap.delete(fruitA.id);
+                    newMap.delete(fruitB.id);
+                    newMap.set(newFruit.id, newFruit);
+                    fruitsRef.current = newMap;
+                    fruitsByBodyRef.current.delete(fruitA.bodyRef!);
+                    fruitsByBodyRef.current.delete(fruitB.bodyRef!);
+                    fruitsByBodyRef.current.set(newBody, newFruit);
+                    return newMap;
+                  });
+
+                  const basePoints = newTier * GAME_CONFIG.scoreMultiplier;
+                  const points = Math.floor(basePoints * scoreMultiplierRef.current);
+                  setScore((prev) => {
+                    const newScore = prev + points;
+                    scoreRef.current = newScore;
+                    checkScoreMilestone(newScore); // 마일스톤 체크
+                    if (newScore > bestScoreRef.current) {
+                      setBestScore(newScore);
+                      bestScoreRef.current = newScore;
+                      setLS(BEST_SCORE_KEY, newScore.toString());
+                    }
+                    return newScore;
+                  });
+
+                  const isWatermelon = newTier === 10;
+                  setMergeAnimations((prev) => [
+                    ...prev,
+                    {
+                      id: `merge_${Date.now()}`,
+                      x: mergeX,
+                      y: mergeY,
+                      startTime: Date.now(),
+                      duration: isWatermelon ? 1200 : 500,
+                      tier: newTier,
+                    },
+                  ]);
+
+                  setScoreAnimations((prev) => [
+                    ...prev,
+                    {
+                      id: `score_${Date.now()}`,
+                      x: mergeX,
+                      y: mergeY,
+                      score: points,
+                      startTime: Date.now(),
+                      duration: 1000,
+                    },
+                  ]);
+
+                  playMergeSound();
+
+                  setTimeout(() => {
+                    mergingIdsRef.current.delete(fruitA.id);
+                    mergingIdsRef.current.delete(fruitB.id);
+                  }, 500);
+                });
+                
+                return; // 한 번에 하나씩만 합성
+              }
             }
           }
         }
@@ -548,29 +590,54 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     };
   }, [containerBounds.width, containerBounds.height, bestScore]);
 
-  // 과일 위치 업데이트
+  // 과일 위치 업데이트 (성능 최적화: 빈도 조절 및 변경된 과일만 업데이트)
   useEffect(() => {
     if (!engineRef.current) return;
 
     const updatePositions = () => {
+      const fruitCount = fruitsRef.current.size;
+      
+      // 과일 수에 따라 업데이트 빈도 조절
+      let updateInterval = 16; // 기본 60fps
+      if (fruitCount > 30) {
+        updateInterval = 33; // 30fps
+      } else if (fruitCount > 50) {
+        updateInterval = 50; // 20fps
+      }
+      
       setFruits((prev) => {
         const newMap = new Map(prev);
+        let hasChanges = false;
+        
         for (const [id, fruit] of newMap.entries()) {
           if (fruit.bodyRef) {
             const pos = fruit.bodyRef.position;
-            newMap.set(id, {
-              ...fruit,
-              x: pos.x,
-              y: pos.y,
-            });
+            // 위치가 실제로 변경된 경우만 업데이트
+            const dx = Math.abs(pos.x - fruit.x);
+            const dy = Math.abs(pos.y - fruit.y);
+            
+            // 0.5px 이상 이동한 경우만 업데이트 (미세한 움직임 무시)
+            if (dx > 0.5 || dy > 0.5) {
+              newMap.set(id, {
+                ...fruit,
+                x: pos.x,
+                y: pos.y,
+              });
+              hasChanges = true;
+            }
           }
         }
-        fruitsRef.current = newMap;
-        return newMap;
+        
+        if (hasChanges) {
+          fruitsRef.current = newMap;
+          return newMap;
+        }
+        
+        return prev; // 변경사항이 없으면 이전 상태 반환 (리렌더링 방지)
       });
     };
 
-    const interval = setInterval(updatePositions, 16); // ~60fps
+    const interval = setInterval(updatePositions, 16); // 체크는 16ms마다, 실제 업데이트는 내부에서 조절
     return () => clearInterval(interval);
   }, []);
 
@@ -622,11 +689,18 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
       let highestTopY = Infinity;
       let highestFruitInfo: { id: string; centerY: number; radius: number; topY: number; velocity: number } | null = null;
       
+      // 성능 최적화: 게임 오버 라인 위쪽에 있는 과일만 체크 (라인 아래는 체크 불필요)
+      const checkThreshold = gameOverLineY + 100; // 라인 아래 100px까지만 체크
+      
       for (const f of aliveFruits) {
         if (!f.bodyRef) continue;
         
         // 물리 엔진에서 직접 최신 위치 가져오기
         const currentY = f.bodyRef.position.y;
+        
+        // 라인 아래에 있는 과일은 체크 스킵 (성능 최적화)
+        if (currentY > checkThreshold) continue;
+        
         // 과일의 중심 y 좌표에서 반지름을 빼면 상단 위치
         const topY = currentY - f.radius;
         
@@ -824,6 +898,7 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     rngRef.current = new SeededRandom(Date.now());
     scoreSavedRef.current = false; // 게임 리셋 시 저장 플래그도 리셋
     lastSavedScoreRef.current = null; // 마지막 저장 점수도 리셋
+    lastMilestoneRef.current = 0; // 마일스톤도 초기화
     isSavingRef.current = false; // 저장 중 플래그도 리셋
     gameStartTimeRef.current = Date.now();
     // 새로운 게임 세션 ID 생성
@@ -833,13 +908,12 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         scoreMultiplierRef.current = 1;
         scoreMultiplierEndTimeRef.current = 0;
         scoreMultiplierStartTimeRef.current = 0;
-        gravityMultiplierRef.current = 1;
-        gravityMultiplierEndTimeRef.current = 0;
-        gravityMultiplierStartTimeRef.current = 0;
     gameOverLineOffsetRef.current = 0;
     gameOverLineOffsetEndTimeRef.current = 0;
     gameOverLineOffsetStartTimeRef.current = 0;
     gameOverLineItemUsedRef.current = false; // 게임 리셋 시 사용 여부도 초기화
+    setGameOverLineItemUsed(false); // UI 업데이트
+    setGameOverLineY(GAME_CONFIG.gameOverLineMargin); // 게임 오버 라인 위치도 초기화
 
     // 초기 과일 생성 제거 - 게임은 0개부터 시작
   }, [containerBounds.width, containerBounds.height]);
@@ -976,6 +1050,7 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
       setScore((prev) => {
         const newScore = prev + multipliedScore;
         scoreRef.current = newScore; // ref 업데이트
+        checkScoreMilestone(newScore); // 마일스톤 체크
         if (newScore > bestScoreRef.current) {
           setBestScore(newScore);
           bestScoreRef.current = newScore; // ref 업데이트
@@ -984,7 +1059,8 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         return newScore;
       });
 
-      playMergeSound(); // 터지는 소리 재생
+      // 과일 제거 효과음 재생
+      playPopSound();
     },
     [bestScore]
   );
@@ -1033,9 +1109,9 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
           return newMap;
         });
         
-        // 터지는 소리 재생 (첫 번째 과일만)
+        // 과일 제거 효과음 재생 (첫 번째 과일만)
         if (index === 0) {
-          playMergeSound();
+          playPopSound();
         }
       }, index * delay);
     });
@@ -1046,36 +1122,6 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     const now = Date.now();
     
     switch (effectType) {
-      case "slow_gravity": {
-        // 중력 감소 (점진적으로 적용)
-        const duration = effectValue?.duration || 30000;
-        const multiplier = effectValue?.gravityMultiplier || 0.5;
-        const targetGravity = PHYSICS_CONFIG.gravity.y * multiplier;
-        const currentGravity = engineRef.current?.world.gravity.y || PHYSICS_CONFIG.gravity.y;
-        
-        gravityMultiplierRef.current = multiplier;
-        gravityMultiplierStartTimeRef.current = now;
-        gravityMultiplierEndTimeRef.current = now + duration;
-        
-        // 점진적으로 중력 감소 (애니메이션 효과)
-        if (engineRef.current) {
-          const steps = 10;
-          const stepDuration = 200; // 200ms 간격
-          const gravityStep = (currentGravity - targetGravity) / steps;
-          
-          for (let i = 0; i <= steps; i++) {
-            setTimeout(() => {
-              if (engineRef.current) {
-                const newGravity = currentGravity - (gravityStep * i);
-                engineRef.current.world.gravity.y = newGravity;
-              }
-            }, i * stepDuration);
-          }
-        }
-        
-        return `중력이 감소했습니다! (${Math.floor(duration / 1000)}초간 지속)`;
-      }
-      
       case "bonus_score": {
         // 점수 2배 (점진적으로 증가)
         const duration = effectValue?.duration || 30000;
@@ -1113,7 +1159,16 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         
         let fruitsToRemove: Fruit[] = [];
         
-        if (position === "bottom") {
+        if (position === "top") {
+          // 상단 과일 제거 (Y 좌표가 작은 순서대로)
+          fruitsToRemove = [...aliveFruits]
+            .sort((a, b) => {
+              const yA = a.bodyRef?.position.y || 0;
+              const yB = b.bodyRef?.position.y || 0;
+              return yA - yB; // 오름차순
+            })
+            .slice(0, count);
+        } else if (position === "bottom") {
           // 하단 과일 제거 (Y 좌표가 큰 순서대로)
           fruitsToRemove = [...aliveFruits]
             .sort((a, b) => {
@@ -1122,7 +1177,7 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
               return yB - yA; // 내림차순
             })
             .slice(0, count);
-        } else         if (position === "random") {
+        } else if (position === "random") {
           // 랜덤 과일 제거
           const shuffled = [...aliveFruits].sort(() => Math.random() - 0.5);
           fruitsToRemove = shuffled.slice(0, Math.min(count, shuffled.length));
@@ -1143,12 +1198,14 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         }
         
         gameOverLineItemUsedRef.current = true;
+        setGameOverLineItemUsed(true); // UI 업데이트
         
-        // 라인을 캔버스 최고 위로 올림 (오프셋을 음수로 설정하여 라인을 위로 이동)
+        // 라인을 상단 바로 밑으로 올림 (시각적으로 보이도록 약간의 여유를 둠)
         // gameOverLineY = GAME_CONFIG.gameOverLineMargin + gameOverLineOffsetRef.current
-        // 라인이 최고 위(0)에 붙으려면: gameOverLineMargin + offset = 0
-        // 따라서 offset = -gameOverLineMargin
-        const targetOffset = -GAME_CONFIG.gameOverLineMargin;
+        // 라인이 최고 위(예: 10px)에 위치하려면: gameOverLineMargin + offset = 10
+        // 따라서 offset = 10 - gameOverLineMargin
+        const visibleLineY = 10; // 상단에서 10px 아래 (시각적으로 보이도록)
+        const targetOffset = visibleLineY - GAME_CONFIG.gameOverLineMargin;
         const currentOffset = gameOverLineOffsetRef.current;
         
         // 점진적으로 라인 상향 (천천히 올라가는 애니메이션)
@@ -1166,12 +1223,21 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
         gameOverLineOffsetStartTimeRef.current = now;
         gameOverLineOffsetEndTimeRef.current = Infinity; // 영구적으로 유지
         
-        return `게임 오버 라인이 최고 위로 올라갔습니다!`;
+        return `게임 오버 라인이 상단으로 올라갔습니다!`;
       }
       
-      case "extra_life": {
-        // 추가 생명 (게임 오버 시 자동으로 사용되므로 여기서는 메시지만 반환)
-        return "추가 생명이 활성화되었습니다! 게임 오버 시 자동으로 사용됩니다.";
+      case "select_next_fruit": {
+        // 다음 과일 지정 (effectValue에 tier가 포함되어야 함)
+        const tier = effectValue?.tier;
+        if (tier === undefined || tier < 0 || tier > 10) {
+          return "유효하지 않은 과일 레벨입니다.";
+        }
+        
+        // 다음 과일을 지정된 tier로 설정
+        setNextTier(tier as FruitTier);
+        
+        const fruitName = FRUIT_CONFIGS[tier as FruitTier].name;
+        return `다음 과일이 ${FRUIT_CONFIGS[tier as FruitTier].emoji} ${fruitName}로 지정되었습니다!`;
       }
       
       default:
@@ -1205,19 +1271,6 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
       });
     }
 
-    // 중력 감소 효과
-    if (gravityMultiplierEndTimeRef.current > now && gravityMultiplierRef.current < 1) {
-      const remaining = gravityMultiplierEndTimeRef.current - now;
-      const duration = gravityMultiplierEndTimeRef.current - gravityMultiplierStartTimeRef.current;
-      activeEffects.push({
-        type: "slow_gravity",
-        name: "중력 감소",
-        icon: "⬇️", // 아이템 데이터와 일치
-        remainingTime: remaining,
-        duration: duration,
-        progress: Math.max(0, Math.min(1, 1 - (remaining / duration))),
-      });
-    }
 
     // 게임 오버 라인 상향 효과 (영구 효과이므로 타이머 표시 안 함)
     // 영구 효과는 타이머를 표시하지 않음
@@ -1235,18 +1288,22 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     progress: number;
   }>>([]);
 
-  // 활성 아이템 효과 업데이트
+  // 게임 오버 라인 Y 위치 state (아이템 효과 반영, 실시간 업데이트)
+  const [gameOverLineY, setGameOverLineY] = useState(GAME_CONFIG.gameOverLineMargin);
+
+  // 활성 아이템 효과 및 게임 오버 라인 위치 업데이트
   useEffect(() => {
     const updateInterval = setInterval(() => {
       const effects = getActiveItemEffects();
       setActiveItemEffects(effects);
+      
+      // 게임 오버 라인 Y 위치 실시간 업데이트
+      const newLineY = Math.max(0, GAME_CONFIG.gameOverLineMargin + gameOverLineOffsetRef.current);
+      setGameOverLineY(newLineY);
     }, 100); // 100ms마다 업데이트
 
     return () => clearInterval(updateInterval);
   }, [getActiveItemEffects]);
-
-  // 게임 오버 라인 Y 위치 계산 (아이템 효과 반영)
-  const gameOverLineY = Math.max(0, GAME_CONFIG.gameOverLineMargin + gameOverLineOffsetRef.current);
 
     return {
     fruits: Array.from(fruits.values()),
@@ -1269,5 +1326,7 @@ export function useWatermelonGame(containerBounds: ContainerBounds, playerId?: s
     applyItemEffect, // 아이템 효과 적용 함수
     activeItemEffects, // 활성 아이템 효과 정보
     gameOverLineY, // 게임 오버 라인 Y 위치
+    gameOverLineItemUsed, // 게임 오버 라인 아이템 사용 여부
+    setNextTier, // 다음 과일 변경 함수
   };
 }
