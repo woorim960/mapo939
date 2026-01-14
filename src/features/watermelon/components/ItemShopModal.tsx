@@ -141,8 +141,8 @@ export function ItemShopModal({
         effectMessage = onItemEffect(
           result.item.effectType, 
           result.item.effectValue,
-          result.item.icon || item.icon,
-          result.item.name || item.name
+          result.item.icon || item.icon || undefined,
+          result.item.name || item.name || undefined
         );
       }
 

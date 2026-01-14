@@ -20,6 +20,8 @@
     "seed:watermelon-items": "tsx prisma/seed-watermelon-items.ts",
     "update:item-prices": "tsx scripts/update-watermelon-items-prices.ts",
     "update:item-prices:prod": "PROD_DATABASE_URL=$PROD_DATABASE_URL tsx scripts/update-watermelon-items-prices.ts",
+    "db:resolve-failed": "tsx scripts/resolve-failed-migration.ts dev",
+    "db:resolve-failed:prod": "tsx scripts/resolve-failed-migration.ts prod",
     "deploy:prod": "bash scripts/deploy-vercel.sh prod",
     "deploy:dev": "bash scripts/deploy-vercel.sh dev"
   },
