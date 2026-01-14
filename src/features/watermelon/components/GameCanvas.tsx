@@ -13,6 +13,7 @@ type GameCanvasProps = {
   popAnimations?: PopAnimation[];
   containerBounds: ContainerBounds;
   currentFruitTier?: FruitTier; // 선택적 (드래그 가이드용)
+  gameOverLineY?: number; // 게임 오버 라인 Y 위치 (아이템 효과 반영)
   onDrop?: (x: number) => void;
   onWatermelonClick?: (x: number, y: number) => void;
   onAnimationComplete?: (type: "score" | "merge" | "pop", id: string) => void;
@@ -25,6 +26,7 @@ export function GameCanvas({
   popAnimations = [],
   containerBounds,
   currentFruitTier,
+  gameOverLineY,
   onDrop,
   onWatermelonClick,
   onAnimationComplete,
@@ -145,38 +147,41 @@ export function GameCanvas({
     ctx.shadowBlur = 0;
 
     // 게임 오버 라인 (더 눈에 띄게)
-    // 위치는 GAME_CONFIG.gameOverLineMargin에서 설정
-    const gameOverLineY = GAME_CONFIG.gameOverLineMargin;
+    // 위치는 GAME_CONFIG.gameOverLineMargin에서 설정하거나 prop으로 전달받음
+    const lineY = gameOverLineY !== undefined ? gameOverLineY : GAME_CONFIG.gameOverLineMargin;
     const warningHeight = GAME_CONFIG.gameOverLineWarningHeight;
     const textOffset = GAME_CONFIG.gameOverLineTextOffset;
     
-    // 경고 배경 그라데이션
-    const warningGradient = ctx.createLinearGradient(0, 0, 0, gameOverLineY + warningHeight);
-    warningGradient.addColorStop(0, "rgba(239, 68, 68, 0.15)");
-    warningGradient.addColorStop(1, "rgba(239, 68, 68, 0.05)");
-    ctx.fillStyle = warningGradient;
-    ctx.fillRect(0, 0, canvasWidth, gameOverLineY + warningHeight);
-    
-    // 점선 라인 (더 두껍고 눈에 띄게)
-    ctx.shadowColor = "rgba(239, 68, 68, 0.8)";
-    ctx.shadowBlur = 12;
-    ctx.strokeStyle = "#ef4444";
-    ctx.lineWidth = 4;
-    ctx.setLineDash([10, 6]);
-    ctx.beginPath();
-    ctx.moveTo(0, gameOverLineY);
-    ctx.lineTo(canvasWidth, gameOverLineY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
-    
-    // 경고 텍스트
-    ctx.font = "bold 14px Arial";
-    ctx.fillStyle = "#ef4444";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("⚠️ 게임 오버 라인", canvasWidth / 2, gameOverLineY - textOffset);
+    // 라인이 최고 위에 있으면 경고 표시 안 함
+    if (lineY > 0) {
+      // 경고 배경 그라데이션
+      const warningGradient = ctx.createLinearGradient(0, 0, 0, lineY + warningHeight);
+      warningGradient.addColorStop(0, "rgba(239, 68, 68, 0.15)");
+      warningGradient.addColorStop(1, "rgba(239, 68, 68, 0.05)");
+      ctx.fillStyle = warningGradient;
+      ctx.fillRect(0, 0, canvasWidth, lineY + warningHeight);
+      
+      // 점선 라인 (더 두껍고 눈에 띄게)
+      ctx.shadowColor = "rgba(239, 68, 68, 0.8)";
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 4;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, lineY);
+      ctx.lineTo(canvasWidth, lineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      
+      // 경고 텍스트
+      ctx.font = "bold 14px Arial";
+      ctx.fillStyle = "#ef4444";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("⚠️ 게임 오버 라인", canvasWidth / 2, lineY - textOffset);
+    }
 
     // 과일 렌더링
     currentFruits.forEach((fruit) => {

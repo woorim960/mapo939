@@ -227,7 +227,7 @@ export function ItemShopModal({
           return "화면의 랜덤 과일 5개가 즉시 제거됩니다.";
         }
       case "lower_game_over_line":
-        return "게임 오버 라인이 일시적으로 낮아집니다 (60초간 지속).";
+        return "게임 오버 라인이 최고 위로 올라갑니다. 게임당 한 번만 사용 가능하며, 게임 종료까지 효과가 유지됩니다.";
       default:
         return "구매 즉시 효과가 적용됩니다.";
     }

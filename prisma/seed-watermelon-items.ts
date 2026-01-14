@@ -95,10 +95,10 @@ async function main() {
     },
     {
       name: "게임 오버 라인 하향",
-      description: "게임 오버 라인을 일시적으로 낮춥니다 (60초)",
+      description: "게임 오버 라인을 최고 위로 올립니다. 게임당 한 번만 사용 가능하며, 게임 종료까지 효과가 유지됩니다.",
       price: 200,
       effectType: "lower_game_over_line",
-      effectValue: { duration: 60000, offset: 50 },
+      effectValue: { duration: 60000, offset: 50 }, // duration과 offset은 사용되지 않음 (영구 효과)
       icon: "📉",
       sortOrder: 6,
       isActive: true,

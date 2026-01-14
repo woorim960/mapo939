@@ -661,16 +661,17 @@ export default function WatermelonPage() {
         {itemEffectAnimation && (
           <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4 animate-in fade-in duration-300">
             <div className="relative">
-              {/* 파티클 효과 */}
+              {/* 파티클 효과 (점진적으로 확장) */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-r from-purple-400/30 via-pink-400/30 to-purple-400/30 animate-ping"></div>
-                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-r from-purple-500/40 via-pink-500/40 to-purple-500/40 animate-pulse"></div>
+                <div className="w-32 h-32 rounded-full bg-gradient-to-r from-purple-400/30 via-pink-400/30 to-purple-400/30 animate-ping" style={{ animationDelay: '0ms' }}></div>
+                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-r from-purple-500/40 via-pink-500/40 to-purple-500/40 animate-pulse" style={{ animationDelay: '100ms' }}></div>
+                <div className="absolute w-16 h-16 rounded-full bg-gradient-to-r from-purple-600/50 via-pink-600/50 to-purple-600/50 animate-ping" style={{ animationDelay: '200ms' }}></div>
               </div>
               
               {/* 메인 아이템 효과 메시지 */}
               <div className="relative bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-2xl shadow-2xl border-2 border-white/50 px-6 py-4 animate-in zoom-in slide-in-from-bottom-2 duration-500">
                 <div className="flex flex-col items-center gap-2">
-                  <div className="text-6xl animate-bounce">{itemEffectAnimation.icon}</div>
+                  <div className="text-6xl animate-bounce" style={{ animationDuration: '0.6s' }}>{itemEffectAnimation.icon}</div>
                   <div className="text-white font-bold text-base drop-shadow-lg text-center">
                     {itemEffectAnimation.itemName}
                   </div>
@@ -752,6 +753,7 @@ export default function WatermelonPage() {
               </div>
             </div>
           )}
+
           <div className="flex items-end justify-between gap-3">
             <div className="flex flex-col gap-1.5 items-start">
               <div className="flex-1 min-w-0">
@@ -827,6 +829,27 @@ export default function WatermelonPage() {
           <div className="absolute left-4 top-4 z-10">
             <ScoreBoard score={game.score} />
           </div>
+
+          {/* 우측 상단 아이템 효과 타이머 */}
+          {game.activeItemEffects && game.activeItemEffects.length > 0 && (
+            <div className="absolute right-4 top-4 z-10 flex flex-col gap-1.5">
+              {game.activeItemEffects.map((effect) => {
+                const remainingSeconds = Math.ceil(effect.remainingTime / 1000);
+                
+                return (
+                  <div
+                    key={effect.type}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/90 backdrop-blur-sm border border-purple-200/50 shadow-md"
+                  >
+                    <span className="text-base">{effect.icon}</span>
+                    <span className="text-xs font-bold text-purple-600 tabular-nums">
+                      {remainingSeconds}s
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           
           <GameCanvas
             fruits={game.fruits}
@@ -835,6 +858,7 @@ export default function WatermelonPage() {
             popAnimations={game.popAnimations}
             containerBounds={containerBounds}
             currentFruitTier={game.nextTier}
+            gameOverLineY={game.gameOverLineY}
             onDrop={handleDrop}
             onWatermelonClick={game.handleWatermelonClick}
             onAnimationComplete={game.handleAnimationComplete}
