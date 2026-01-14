@@ -1,7 +1,10 @@
 // 멤버 상세 모달 컴포넌트
 
+"use client";
+
 import { Modal } from "@/shared/components/Modal";
 import { fmtYmd, fmtYmdHm, pct } from "../utils";
+import { WatermelonConnection } from "./WatermelonConnection";
 import type { MemberStats } from "../types";
 
 type MemberModalProps = {
@@ -170,6 +173,11 @@ export function MemberModal({
                   결석은 "기록 없음"으로 처리됩니다. (오늘 기준만 수정 가능)
                 </p>
               </div>
+            </div>
+
+            {/* 수박게임 계정 연결 */}
+            <div className="rounded-xl border-2 border-white/50 bg-white/80 backdrop-blur-sm p-5 shadow-xl">
+              <WatermelonConnection memberId={memberStats.member.id} />
             </div>
 
             {memberStats.bonusPoints.length > 0 && (

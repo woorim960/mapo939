@@ -18,6 +18,8 @@
     "db:copy": "tsx scripts/copy-db-data.ts",
     "seed:members": "tsx prisma/seed-members.ts",
     "seed:watermelon-items": "tsx prisma/seed-watermelon-items.ts",
+    "update:item-prices": "tsx scripts/update-watermelon-items-prices.ts",
+    "update:item-prices:prod": "PROD_DATABASE_URL=$PROD_DATABASE_URL tsx scripts/update-watermelon-items-prices.ts",
     "deploy:prod": "bash scripts/deploy-vercel.sh prod",
     "deploy:dev": "bash scripts/deploy-vercel.sh dev"
   },

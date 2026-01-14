@@ -91,6 +91,8 @@ export async function POST(req: Request) {
         bestScore,
         averageScore,
         playCount,
+        gamePoints: player.gamePoints ?? 1000,
+        memberId: player.memberId,
       };
 
       if (averageMaxTier !== null) {
@@ -144,12 +146,14 @@ export async function POST(req: Request) {
         : null;
 
     const playerData: any = {
-      id: player.id,
-      nickname: player.nickname,
-      bestScore,
-      playCount,
-      averageScore,
-    };
+        id: player.id,
+        nickname: player.nickname,
+        bestScore,
+        playCount,
+        averageScore,
+        gamePoints: player.gamePoints ?? 1000,
+        memberId: player.memberId,
+      };
 
     if (averageMaxTier !== null) {
       playerData.averageMaxTier = averageMaxTier;

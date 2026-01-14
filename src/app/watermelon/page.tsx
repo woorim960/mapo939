@@ -16,6 +16,7 @@ import { SaveConfirmModal } from "@/features/watermelon/components/SaveConfirmMo
 import { LogoutConfirmModal } from "@/features/watermelon/components/LogoutConfirmModal";
 import { MenuButton } from "@/features/watermelon/components/MenuButton";
 import { ItemShopModal } from "@/features/watermelon/components/ItemShopModal";
+import { PlayerDashboard } from "@/features/watermelon/components/PlayerDashboard";
 import { Toast } from "@/shared/components/Toast";
 import { createOrGetPlayer } from "@/features/watermelon/api";
 import { getLS, setLS, removeLS } from "@/shared/utils/storage";
@@ -37,6 +38,8 @@ export default function WatermelonPage() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerNickname, setPlayerNickname] = useState<string>("");
   const [playerStats, setPlayerStats] = useState<{ bestScore?: number; averageScore?: number; playCount?: number; averageMaxTier?: number } | null>(null);
+  const [gamePoints, setGamePoints] = useState<number>(1000);
+  const [memberId, setMemberId] = useState<string | undefined>(undefined);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [loadingPlayer, setLoadingPlayer] = useState(true);
   const [nicknameModalError, setNicknameModalError] = useState<string>("");
@@ -48,11 +51,13 @@ export default function WatermelonPage() {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showItemShop, setShowItemShop] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [toast, setToast] = useState("");
   const [currentScoreTier, setCurrentScoreTier] = useState(0); // 현재 도달한 점수 단계
   const [celebrationMessage, setCelebrationMessage] = useState<{ message: string; intensity: number } | null>(null);
   const [gameOverModalDismissed, setGameOverModalDismissed] = useState(false); // 게임 오버 모달이 닫혔는지 추적
+  const [itemEffectAnimation, setItemEffectAnimation] = useState<{ icon: string; message: string; itemName: string } | null>(null); // 아이템 효과 애니메이션
   const [textCompactMode, setTextCompactMode] = useState<{ currentMax: number; average: number; next: number }>({ currentMax: 0, average: 0, next: 0 }); // 0: 전체, 1: "최대" 제거, 2: "현재"도 제거
   const currentMaxRef = useRef<HTMLDivElement>(null);
   const averageRef = useRef<HTMLDivElement>(null);
@@ -74,6 +79,8 @@ export default function WatermelonPage() {
           setLS(PLAYER_ID_KEY, player.id);
           setLS(PLAYER_NICKNAME_KEY, player.nickname);
           setLS(PLAYER_PASSWORD_KEY, savedPassword); // 패스워드 유지
+          setGamePoints(player.gamePoints ?? 1000);
+          setMemberId(player.memberId || undefined);
           setPlayerStats({
             bestScore: player.bestScore ?? 0,
             averageScore: player.averageScore ?? 0,
@@ -102,6 +109,8 @@ export default function WatermelonPage() {
     try {
       const { getPlayerStats } = await import("@/features/watermelon/api");
       const stats = await getPlayerStats(pid);
+      setGamePoints(stats.gamePoints ?? 1000);
+      setMemberId(stats.memberId || undefined);
       setPlayerStats({
         bestScore: stats.bestScore ?? 0,
         averageScore: stats.averageScore ?? 0,
@@ -134,6 +143,8 @@ export default function WatermelonPage() {
       setLS(PLAYER_ID_KEY, player.id);
       setLS(PLAYER_NICKNAME_KEY, player.nickname);
       setLS(PLAYER_PASSWORD_KEY, password); // 자동 로그인을 위해 패스워드 저장
+      setGamePoints(player.gamePoints ?? 1000);
+      setMemberId(player.memberId || undefined);
       setPlayerStats({
         bestScore: player.bestScore,
         averageScore: player.averageScore,
@@ -277,14 +288,57 @@ export default function WatermelonPage() {
 
   const colorTheme = getColorTheme();
 
-  // 게임 오버 상태 감지
+  // 게임 오버 상태 감지 및 extra_life 아이템 자동 사용
   useEffect(() => {
     if (game.isGameOver && !showGameOver && !gameOverModalDismissed) {
-      const wasNewRecord = game.score >= game.bestScore && game.score > 0;
-      setIsNewRecord(wasNewRecord);
-      setShowGameOver(true);
+      // extra_life 아이템 자동 사용 체크
+      const useExtraLife = async () => {
+        if (!playerId) {
+          const wasNewRecord = game.score >= game.bestScore && game.score > 0;
+          setIsNewRecord(wasNewRecord);
+          setShowGameOver(true);
+          return;
+        }
+
+        try {
+          // 인벤토리에서 extra_life 아이템 찾기
+          const { getInventory } = await import("@/features/watermelon/api");
+          const inventory = await getInventory(playerId);
+          const extraLifeItem = inventory.find(
+            (item) => item.item.effectType === "extra_life" && item.quantity > 0
+          );
+
+          if (extraLifeItem) {
+            // extra_life 아이템 사용
+            const { useItem } = await import("@/features/watermelon/api");
+            try {
+              await useItem(playerId, extraLifeItem.item.id, 1);
+              
+              // 게임 재시작 (추가 생명으로 계속)
+              game.resetGame();
+              setShowGameOver(false);
+              setIsNewRecord(false);
+              setGameOverModalDismissed(false);
+              setToast("💚 추가 생명으로 게임을 계속합니다!");
+              return;
+            } catch (error) {
+              console.error("Failed to use extra life:", error);
+              // 아이템 사용 실패해도 게임 오버 처리
+            }
+          }
+        } catch (error) {
+          console.error("Failed to check/use extra life:", error);
+        }
+
+        // extra_life가 없으면 일반 게임 오버 처리
+        const wasNewRecord = game.score >= game.bestScore && game.score > 0;
+        setIsNewRecord(wasNewRecord);
+        setShowGameOver(true);
+      };
+
+      useExtraLife();
     }
-  }, [game.isGameOver, game.score, game.bestScore, showGameOver, gameOverModalDismissed]);
+  }, [game.isGameOver, game.score, game.bestScore, showGameOver, gameOverModalDismissed, playerId, game]);
 
   // 화면 크기에 맞춰 컨테이너 크기 조정 (스크롤 절대 방지)
   useEffect(() => {
@@ -603,6 +657,35 @@ export default function WatermelonPage() {
           </div>
         )}
 
+        {/* 아이템 효과 적용 애니메이션 */}
+        {itemEffectAnimation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4 animate-in fade-in duration-300">
+            <div className="relative">
+              {/* 파티클 효과 */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-32 h-32 rounded-full bg-gradient-to-r from-purple-400/30 via-pink-400/30 to-purple-400/30 animate-ping"></div>
+                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-r from-purple-500/40 via-pink-500/40 to-purple-500/40 animate-pulse"></div>
+              </div>
+              
+              {/* 메인 아이템 효과 메시지 */}
+              <div className="relative bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-2xl shadow-2xl border-2 border-white/50 px-6 py-4 animate-in zoom-in slide-in-from-bottom-2 duration-500">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-6xl animate-bounce">{itemEffectAnimation.icon}</div>
+                  <div className="text-white font-bold text-base drop-shadow-lg text-center">
+                    {itemEffectAnimation.itemName}
+                  </div>
+                  <div className="text-white/90 font-semibold text-sm drop-shadow-md text-center">
+                    {itemEffectAnimation.message}
+                  </div>
+                </div>
+                
+                {/* 반짝이는 효과 */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer rounded-2xl pointer-events-none"></div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 헤더 */}
         <header className={`flex-shrink-0 rounded-2xl border-2 ${colorTheme.border || "border-white/50"} bg-gradient-to-br ${colorTheme.header} backdrop-blur-sm shadow-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300 transition-all duration-700`}>
           <div className="flex items-center justify-between mb-3">
@@ -631,21 +714,42 @@ export default function WatermelonPage() {
           </div>
 
           {playerNickname && (
-            <div className="flex items-center justify-between w-full gap-2 text-xs text-gray-600 mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-500">플레이어</span>
-                <div className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold border border-green-200">
-                  {playerNickname}
+            <div className="mb-2">
+              <div className="flex items-center justify-between w-full gap-2 text-xs text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-500">플레이어</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDashboard(true)}
+                    className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold border border-green-200 hover:bg-green-200 transition-colors"
+                  >
+                    {playerNickname}
+                  </button>
+                  {/* 포인트 표시 (닉네임 우측) */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-purple-50 border border-purple-200">
+                    <span className="text-sm">🍉</span>
+                    <span className="text-xs font-bold text-purple-600">{gamePoints.toLocaleString()}P</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowDashboard(true)}
+                    className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300"
+                    title="대시보드"
+                  >
+                    📊
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300 flex-shrink-0"
+                    title="로그아웃"
+                  >
+                    🚪
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="text-xs px-2 py-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors border border-gray-200 hover:border-gray-300 flex-shrink-0"
-                title="로그아웃"
-              >
-                🚪
-              </button>
             </div>
           )}
           <div className="flex items-end justify-between gap-3">
@@ -771,15 +875,48 @@ export default function WatermelonPage() {
       <HowToModal open={showHowTo} onClose={() => setShowHowTo(false)} />
 
       {/* 아이템 상점 모달 */}
-          <ItemShopModal
-            open={showItemShop}
-            onClose={() => setShowItemShop(false)}
-            onPurchaseSuccess={() => {
-              setToast("아이템 구매가 완료되었습니다! 🎉");
-            }}
-            onToast={(message) => setToast(message)}
-            playerId={playerId || undefined}
-          />
+      <ItemShopModal
+        open={showItemShop}
+        onClose={() => setShowItemShop(false)}
+        onPurchaseSuccess={() => {
+          // 포인트 정보 다시 로드
+          if (playerId) {
+            loadPlayerStats(playerId);
+          }
+        }}
+        onToast={(message) => setToast(message)}
+        playerId={playerId || undefined}
+        gamePoints={gamePoints}
+        memberId={memberId}
+        onItemEffect={(effectType, effectValue, itemIcon, itemName) => {
+          // 게임 훅의 아이템 효과 적용 함수 호출
+          if (game.applyItemEffect) {
+            const message = game.applyItemEffect(effectType, effectValue);
+            
+            // 아이템 효과 애니메이션 표시
+            if (message) {
+              setItemEffectAnimation({ 
+                icon: itemIcon || "✨", 
+                message,
+                itemName: itemName || "아이템"
+              });
+              setTimeout(() => setItemEffectAnimation(null), 3000);
+            }
+            
+            return message;
+          }
+          return null;
+        }}
+      />
+
+      {/* 플레이어 대시보드 모달 */}
+      {playerId && (
+        <PlayerDashboard
+          open={showDashboard}
+          onClose={() => setShowDashboard(false)}
+          playerId={playerId}
+        />
+      )}
 
       {/* 통계 모달 */}
       <StatsModal

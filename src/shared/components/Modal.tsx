@@ -46,7 +46,7 @@ export function Modal({ children, onClose }: ModalProps) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       {/* Backdrop */}
       <div
         className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-200 ${
@@ -57,15 +57,22 @@ export function Modal({ children, onClose }: ModalProps) {
         role="button"
         tabIndex={0}
         onKeyDown={handleKeyDown}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
       
       {/* Modal Content */}
       <div
-        className={`relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
+        className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
           isVisible
             ? "opacity-100 scale-100 translate-y-0"
             : "opacity-0 scale-95 translate-y-4"
         }`}
+        style={{ 
+          position: 'relative',
+          zIndex: 101,
+          margin: 'auto',
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
         {children}
       </div>

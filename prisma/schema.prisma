@@ -33,8 +33,10 @@ model Member {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  attendances Attendance[]
-  bonusPoints BonusPoints[]
+  watermelonPlayer      WatermelonPlayer?
+  attendancePointsUsage AttendancePointsUsage[]
+  attendances           Attendance[]
+  bonusPoints           BonusPoints[]
 
   @@index([isActive, birthDate])
   @@map("members")
@@ -118,13 +120,17 @@ model WatermelonPlayer {
   id           String   @id @default(uuid())
   nickname     String   @unique
   passwordHash String?
+  gamePoints   Int      @default(1000) // 수박게임 포인트 (기본 1,000)
+  memberId     String?  @unique // 출석부 멤버와 연결 (선택적)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  scores    WatermelonScore[]
-  items     WatermelonPlayerItem[]
-  payments  WatermelonPayment[]
-  purchases WatermelonItemPurchase[]
+  member                Member?                  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  attendancePointsUsage AttendancePointsUsage[]
+  scores                WatermelonScore[]
+  items                 WatermelonPlayerItem[]
+  payments              WatermelonPayment[]
+  purchases             WatermelonItemPurchase[]
 
   @@map("watermelon_players")
 }
@@ -159,9 +165,10 @@ model WatermelonItem {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  playerItems WatermelonPlayerItem[]
-  purchases   WatermelonItemPurchase[]
-  payments    WatermelonPayment[]
+  playerItems           WatermelonPlayerItem[]
+  purchases             WatermelonItemPurchase[]
+  payments              WatermelonPayment[]
+  attendancePointsUsage AttendancePointsUsage[]
 
   @@index([isActive, sortOrder])
   @@map("watermelon_items")
@@ -192,7 +199,7 @@ model WatermelonPayment {
   amount        Int // 결제 금액
   paymentMethod String // 결제 수단 ("toss", "card", "account" 등)
   paymentKey    String? // 토스페이먼츠 결제 키
-  orderId       String? @unique // 주문 ID (unique로 변경)
+  orderId       String?  @unique // 주문 ID (unique로 변경)
   status        String // "pending", "completed", "failed", "refunded"
   metadata      Json? // 추가 정보 (결제 상세 정보)
   createdAt     DateTime @default(now())
@@ -210,19 +217,44 @@ model WatermelonPayment {
 
 // 아이템 구매 내역
 model WatermelonItemPurchase {
-  id        String   @id @default(uuid())
-  playerId  String
-  itemId    String
-  quantity  Int
-  paymentId String?  @unique // 결제 ID (1:1 관계)
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  playerId   String
+  itemId     String
+  quantity   Int
+  paymentId  String?  @unique // 결제 ID (토스 결제 시)
+  pointType  String? // "game" 또는 "attendance" (포인트 구매 시)
+  pointsUsed Int? // 사용한 포인트 (포인트 구매 시)
+  createdAt  DateTime @default(now())
 
-  player  WatermelonPlayer   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  item    WatermelonItem     @relation(fields: [itemId], references: [id])
-  payment WatermelonPayment? @relation(fields: [paymentId], references: [id])
+  player                WatermelonPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item                  WatermelonItem         @relation(fields: [itemId], references: [id])
+  payment               WatermelonPayment?     @relation(fields: [paymentId], references: [id])
+  attendancePointsUsage AttendancePointsUsage?
 
   @@index([playerId])
   @@index([itemId])
   @@index([paymentId])
   @@map("watermelon_item_purchases")
+}
+
+// 출석 포인트 사용 내역
+model AttendancePointsUsage {
+  id         String   @id @default(uuid())
+  memberId   String
+  playerId   String
+  itemId     String
+  quantity   Int
+  pointsUsed Int
+  purchaseId String   @unique // 구매 내역 ID
+  createdAt  DateTime @default(now())
+
+  member   Member                 @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  player   WatermelonPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item     WatermelonItem         @relation(fields: [itemId], references: [id])
+  purchase WatermelonItemPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([playerId])
+  @@index([purchaseId])
+  @@map("attendance_points_usage")
 }

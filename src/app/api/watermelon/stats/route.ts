@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getKstNow } from "@/lib/kst";
 
 export async function GET(req: Request) {
   try {
@@ -9,18 +10,30 @@ export async function GET(req: Request) {
     const playerId = url.searchParams.get("playerId")?.trim();
     const period = url.searchParams.get("period") || "all";
 
-    // 날짜 필터 계산
-    const now = new Date();
+    // 날짜 필터 계산 (KST 기준)
+    const kstNow = getKstNow();
     let startDate: Date | null = null;
 
     if (period === "today") {
-      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      // KST 오늘 00:00 = UTC 전날 15:00
+      const y = kstNow.getFullYear();
+      const m = kstNow.getMonth();
+      const d = kstNow.getDate();
+      startDate = new Date(Date.UTC(y, m, d, -9, 0, 0));
     } else if (period === "week") {
-      const dayOfWeek = now.getDay();
-      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 월요일 기준
-      startDate = new Date(now.getFullYear(), now.getMonth(), diff, 0, 0, 0, 0);
+      // KST 이번주 월요일 00:00
+      const dayOfWeek = kstNow.getDay();
+      const diff = kstNow.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 월요일 기준
+      const monday = new Date(kstNow.getFullYear(), kstNow.getMonth(), diff, 0, 0, 0, 0);
+      const y = monday.getFullYear();
+      const m = monday.getMonth();
+      const d = monday.getDate();
+      startDate = new Date(Date.UTC(y, m, d, -9, 0, 0));
     } else if (period === "month") {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      // KST 이번달 1일 00:00
+      const y = kstNow.getFullYear();
+      const m = kstNow.getMonth();
+      startDate = new Date(Date.UTC(y, m, 1, -9, 0, 0));
     }
 
     if (playerId) {
@@ -60,6 +73,41 @@ export async function GET(req: Request) {
           ? Math.round((maxTiers.reduce((sum, t) => sum + t, 0) / maxTiers.length) * 10) / 10
           : null;
 
+      // 포인트 정보 조회
+      const gamePoints = player.gamePoints ?? 1000;
+      let attendancePoints = 0;
+      
+      if (player.memberId) {
+        let usedPoints = { _sum: { pointsUsed: null as number | null } };
+        try {
+          usedPoints = await prisma.attendancePointsUsage.aggregate({
+            where: { memberId: player.memberId },
+            _sum: { pointsUsed: true },
+          });
+        } catch (err: any) {
+          console.warn("Failed to get attendance points usage, assuming 0:", err?.message);
+          usedPoints = { _sum: { pointsUsed: 0 } };
+        }
+
+        const [attendancePointsSum, bonusPointsSum] = await Promise.all([
+          prisma.attendance.aggregate({
+            where: {
+              memberId: player.memberId,
+              status: { in: ["PRESENT", "LATE"] },
+            },
+            _sum: { points: true },
+          }),
+          prisma.bonusPoints.aggregate({
+            where: { memberId: player.memberId },
+            _sum: { points: true },
+          }),
+        ]);
+        
+        const totalEarned = (attendancePointsSum._sum.points ?? 0) + (bonusPointsSum._sum.points ?? 0);
+        const totalUsed = usedPoints._sum.pointsUsed ?? 0;
+        attendancePoints = totalEarned - totalUsed;
+      }
+
       const playerData: any = {
         id: player.id,
         nickname: player.nickname,
@@ -67,6 +115,9 @@ export async function GET(req: Request) {
         averageScore,
         playCount,
         recentScores,
+        gamePoints,
+        attendancePoints,
+        memberId: player.memberId,
       };
       
       if (averageMaxTier !== null) {
