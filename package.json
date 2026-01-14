@@ -9,6 +9,7 @@
     "build:dev": "NODE_ENV=development npx prisma migrate deploy && npx next build",
     "start": "next start",
     "lint": "eslint",
+    "postinstall": "prisma generate",
     "db:migrate": "npx prisma migrate deploy",
     "db:migrate:new": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
