@@ -18,7 +18,8 @@ model Admin {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  sessions AdminSession[]
+  sessions                    AdminSession[]
+  watermelonConnectionRequests WatermelonConnectionRequest[]
 
   @@map("admins")
 }
@@ -33,10 +34,11 @@ model Member {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  watermelonPlayer      WatermelonPlayer?
-  attendancePointsUsage AttendancePointsUsage[]
-  attendances           Attendance[]
-  bonusPoints           BonusPoints[]
+  watermelonPlayer          WatermelonPlayer?
+  watermelonConnectionRequests WatermelonConnectionRequest[]
+  attendancePointsUsage     AttendancePointsUsage[]
+  attendances               Attendance[]
+  bonusPoints               BonusPoints[]
 
   @@index([isActive, birthDate])
   @@map("members")
@@ -125,12 +127,13 @@ model WatermelonPlayer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  member                Member?                  @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  attendancePointsUsage AttendancePointsUsage[]
-  scores                WatermelonScore[]
-  playerItems           WatermelonPlayerItem[]
-  payments              WatermelonPayment[]
-  purchases             WatermelonItemPurchase[]
+  member                    Member?                      @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  connectionRequests        WatermelonConnectionRequest[]
+  attendancePointsUsage     AttendancePointsUsage[]
+  scores                    WatermelonScore[]
+  playerItems               WatermelonPlayerItem[]
+  payments                  WatermelonPayment[]
+  purchases                 WatermelonItemPurchase[]
 
   @@map("watermelon_players")
 }
@@ -232,4 +235,26 @@ model AttendancePointsUsage {
   @@index([playerId])
   @@index([purchaseId])
   @@map("attendance_points_usage")
+}
+
+// 수박게임 계정과 출석부 멤버 연결 요청
+model WatermelonConnectionRequest {
+  id        String   @id @default(uuid())
+  playerId  String
+  memberId  String
+  status    String   @default("pending") // "pending", "approved", "rejected"
+  adminId   String?  // 승인/거부한 관리자 ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  player WatermelonPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  member Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  admin  Admin?           @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@unique([playerId, memberId, status])
+  @@index([status])
+  @@index([playerId])
+  @@index([memberId])
+  @@index([createdAt])
+  @@map("watermelon_connection_requests")
 }

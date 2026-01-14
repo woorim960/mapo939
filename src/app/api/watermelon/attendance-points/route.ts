@@ -22,11 +22,36 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "player_not_found" }, { status: 404 });
     }
 
+    // 대기 중인 연결 요청 확인
+    // @ts-ignore - Prisma 클라이언트 타입이 업데이트되지 않았을 수 있음
+    const pendingRequest = await (prisma.watermelonConnectionRequest as any).findFirst({
+      where: {
+        playerId,
+        status: "pending",
+      },
+      include: {
+        member: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
     // 연결된 멤버가 없으면 출석 포인트 0
     if (!player.memberId) {
       return NextResponse.json({
         attendancePoints: 0,
         connected: false,
+        pendingRequest: pendingRequest ? {
+          memberId: pendingRequest.memberId,
+          memberName: pendingRequest.member?.name || null,
+          createdAt: pendingRequest.createdAt,
+        } : null,
       });
     }
 
@@ -82,6 +107,11 @@ export async function GET(req: Request) {
       connected: true,
       memberId: player.memberId,
       memberName: member?.name || null,
+      pendingRequest: pendingRequest ? {
+        memberId: pendingRequest.memberId,
+        memberName: pendingRequest.member?.name || null,
+        createdAt: pendingRequest.createdAt,
+      } : null,
     });
   } catch (error: any) {
     console.error("Get attendance points API error:", error);

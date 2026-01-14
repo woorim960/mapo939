@@ -157,6 +157,11 @@ export async function getAttendancePoints(playerId: string): Promise<{
   memberName?: string | null;
   totalEarned?: number;
   totalUsed?: number;
+  pendingRequest?: {
+    memberId: string;
+    memberName: string | null;
+    createdAt: string;
+  } | null;
 } | null> {
   try {
     const data = await apiGet<{
@@ -166,6 +171,11 @@ export async function getAttendancePoints(playerId: string): Promise<{
       memberName?: string | null;
       totalEarned?: number;
       totalUsed?: number;
+      pendingRequest?: {
+        memberId: string;
+        memberName: string | null;
+        createdAt: string;
+      } | null;
     }>(`/api/watermelon/attendance-points?playerId=${encodeURIComponent(playerId)}`);
     return data;
   } catch (error: any) {
@@ -180,8 +190,8 @@ export async function connectWatermelonAccount(
   memberId: string,
   nickname: string,
   password: string
-): Promise<{ success: boolean }> {
-  const data = await apiPost<{ success: boolean }>("/api/watermelon/player/connect", {
+): Promise<{ success: boolean; message?: string }> {
+  const data = await apiPost<{ success: boolean; message?: string }>("/api/watermelon/player/connect", {
     memberId,
     nickname,
     password,

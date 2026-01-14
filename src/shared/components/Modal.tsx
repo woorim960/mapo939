@@ -83,7 +83,7 @@ export function Modal({ children, onClose }: ModalProps) {
       
       {/* Modal Content */}
       <div
-        className={`relative w-full max-w-md overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-6 md:p-8 transition-all duration-300 ${
+        className={`relative w-full max-w-2xl overflow-y-auto rounded-3xl bg-gradient-to-br from-white via-white to-neutral-50/80 backdrop-blur-md shadow-2xl border-2 border-neutral-200/50 p-4 sm:p-6 md:p-8 transition-all duration-300 ${
           isVisible
             ? "opacity-100 scale-100 translate-y-0"
             : "opacity-0 scale-95 translate-y-4"

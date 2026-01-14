@@ -63,7 +63,7 @@ export function Toast({ message, onClose, duration = 1000, variant = "success" }
   );
 
   return (
-    <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-[60] transition-all duration-300 ${
+    <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-[200] transition-all duration-300 ${
       isVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
     }`}>
       <div className={`rounded-2xl border-2 ${borderColor} ${bgGradient} shadow-2xl px-5 py-4 flex items-center gap-4 min-w-[300px] max-w-md backdrop-blur-sm`}>

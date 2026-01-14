@@ -10,6 +10,7 @@ type RankingPodiumProps = {
     third: (Member & { age: number })[];
   };
   onOpen: (memberId: string) => void;
+  onRankClick?: (members: (Member & { age: number })[], rank: number, points: number) => void;
 };
 
 type RankCardProps = {
@@ -24,9 +25,10 @@ type RankCardProps = {
     points: string;
   };
   onOpen: (memberId: string) => void;
+  onRankClick?: (members: (Member & { age: number })[], rank: number, points: number) => void;
 };
 
-function RankCard({ members, rank, medalIcon, colors, onOpen }: RankCardProps) {
+function RankCard({ members, rank, medalIcon, colors, onOpen, onRankClick }: RankCardProps) {
   const nameRef = useRef<HTMLDivElement>(null);
   const [isTextOverflowing, setIsTextOverflowing] = useState(false);
 
@@ -70,14 +72,24 @@ function RankCard({ members, rank, medalIcon, colors, onOpen }: RankCardProps) {
   const firstMember = members[0];
   const showCompactProfile = isTextOverflowing;
 
+  const handleCardClick = () => {
+    if (onRankClick) {
+      onRankClick(members, rank, firstMember.totalPoints ?? 0);
+    } else {
+      onOpen(firstMember.id);
+    }
+  };
+
   return (
     <div
       className={`flex items-center gap-3 md:gap-4 rounded-xl border-2 ${colors.border} ${colors.bg} p-3 md:p-4 h-[90px] md:h-[100px] hover:shadow-lg hover:scale-[1.01] transition-all duration-200 cursor-pointer group`}
-      onClick={() => onOpen(firstMember.id)}
+      onClick={handleCardClick}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onOpen(firstMember.id);
+        if (e.key === "Enter" || e.key === " ") {
+          handleCardClick();
+        }
       }}
     >
       {/* 왼쪽: 메달 */}
@@ -183,7 +195,7 @@ function RankCard({ members, rank, medalIcon, colors, onOpen }: RankCardProps) {
   );
 }
 
-export function RankingPodium({ rankedGroups, onOpen }: RankingPodiumProps) {
+export function RankingPodium({ rankedGroups, onOpen, onRankClick }: RankingPodiumProps) {
   const { first, second, third } = rankedGroups;
   
   if (first.length === 0 && second.length === 0 && third.length === 0) return null;
@@ -217,6 +229,7 @@ export function RankingPodium({ rankedGroups, onOpen }: RankingPodiumProps) {
             points: "bg-gradient-to-r from-yellow-600 to-amber-600",
           }}
           onOpen={onOpen}
+          onRankClick={onRankClick}
         />
 
         {/* 2등 */}
@@ -232,6 +245,7 @@ export function RankingPodium({ rankedGroups, onOpen }: RankingPodiumProps) {
             points: "bg-gradient-to-r from-slate-600 to-gray-600",
           }}
           onOpen={onOpen}
+          onRankClick={onRankClick}
         />
 
         {/* 3등 */}
@@ -247,6 +261,7 @@ export function RankingPodium({ rankedGroups, onOpen }: RankingPodiumProps) {
             points: "bg-gradient-to-r from-amber-600 to-orange-600",
           }}
           onOpen={onOpen}
+          onRankClick={onRankClick}
         />
       </div>
     </section>

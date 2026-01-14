@@ -11,9 +11,11 @@ import { MemberSection } from "./MemberSection";
 import { BirthdaySection } from "./BirthdaySection";
 import { RankingPodium } from "./RankingPodium";
 import { MemberModal } from "./MemberModal";
+import { RankDetailModal } from "./RankDetailModal";
 import { MemberForm } from "./MemberForm";
 import { LoginModal } from "./LoginModal";
 import { GameMenuButton } from "./GameMenuButton";
+import { WatermelonConnectionRequests } from "./WatermelonConnectionRequests";
 import { Toast } from "@/shared/components/Toast";
 import type { Member, MemberStats } from "../types";
 
@@ -30,6 +32,17 @@ export function MembersBoard() {
   // 로그인 모달
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginErr, setLoginErr] = useState<string | null>(null);
+
+  // 연결 요청 모달
+  const [showConnectionRequests, setShowConnectionRequests] = useState(false);
+
+  // 랭크 상세 모달
+  const [rankDetailModal, setRankDetailModal] = useState<{
+    open: boolean;
+    members: (Member & { age: number })[];
+    rank: number;
+    points: number;
+  } | null>(null);
 
   // 토스트
   const [toast, setToast] = useState<string>("");
@@ -322,7 +335,7 @@ export function MembersBoard() {
                 <button
                   type="button"
                   onClick={() => handleOpenLoginModal()}
-                  className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                  className="h-10 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center"
                 >
                   🔐 로그인
                 </button>
@@ -332,15 +345,22 @@ export function MembersBoard() {
                     type="button"
                     disabled={loading}
                     onClick={handleOpenCreateMember}
-                    className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-10 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     ➕ 추가
                   </button>
                   <button
                     type="button"
+                    onClick={() => setShowConnectionRequests(true)}
+                    className="h-10 rounded-xl border-2 border-blue-400 bg-gradient-to-r from-blue-500 to-indigo-500 px-4 text-sm font-bold text-white hover:from-blue-600 hover:to-indigo-600 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center"
+                  >
+                    🔗 연결 요청
+                  </button>
+                  <button
+                    type="button"
                     disabled={loading}
                     onClick={handleLogout}
-                    className="rounded-xl border-2 border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-10 rounded-xl border-2 border-gray-400 bg-white px-4 text-sm font-bold text-gray-800 hover:bg-gray-50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     🚪 로그아웃
                   </button>
@@ -350,7 +370,18 @@ export function MembersBoard() {
           </div>
         </header>
 
-        <RankingPodium rankedGroups={rankedGroups} onOpen={handleOpenMemberModal} />
+        <RankingPodium
+          rankedGroups={rankedGroups}
+          onOpen={handleOpenMemberModal}
+          onRankClick={(members, rank, points) => {
+            setRankDetailModal({
+              open: true,
+              members,
+              rank,
+              points,
+            });
+          }}
+        />
 
         <MemberSection
           title="청년회"
@@ -411,6 +442,30 @@ export function MembersBoard() {
           }}
           onSuccess={handleLoginSuccess}
         />
+
+        {/* 수박게임 연결 요청 관리 모달 */}
+        {admin.isAdmin && (
+          <WatermelonConnectionRequests
+            open={showConnectionRequests}
+            onClose={() => setShowConnectionRequests(false)}
+            onSuccess={() => {
+              refreshAll();
+            }}
+          />
+        )}
+
+        {/* 랭크 상세 모달 */}
+        {rankDetailModal && (
+          <RankDetailModal
+            open={rankDetailModal.open}
+            onClose={() => setRankDetailModal(null)}
+            members={rankDetailModal.members}
+            rank={rankDetailModal.rank}
+            points={rankDetailModal.points}
+            isAdmin={admin.isAdmin}
+            onMemberClick={handleOpenMemberModal}
+          />
+        )}
 
         {/* 토스트 */}
         {toast && <Toast message={toast} onClose={() => setToast("")} />}

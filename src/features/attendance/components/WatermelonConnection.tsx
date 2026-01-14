@@ -88,10 +88,16 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
     try {
       setConnecting(true);
       setError("");
-      await connectWatermelonAccount(memberId, nickname.trim(), password);
+      const result = await connectWatermelonAccount(memberId, nickname.trim(), password);
       setShowConnectModal(false);
       setNickname("");
       setPassword("");
+      // 연결 요청이 생성되었으므로 관리자 승인 대기 중
+      // 성공 메시지 표시 (에러 상태를 사용하지만 실제로는 정보 메시지)
+      const successMessage = result.message || "관리자 승인 요청을 완료했습니다.";
+      setError(successMessage);
+      // 정보 메시지이므로 잠시 후 초기화
+      setTimeout(() => setError(""), 5000);
       await loadConnection();
       if (onUpdate) {
         onUpdate();
@@ -101,15 +107,19 @@ export function WatermelonConnection({ memberId, onUpdate }: WatermelonConnectio
       const errorMessage = err?.message || err?.error || "연결에 실패했습니다.";
       
       if (errorMessage.includes("invalid_password") || errorMessage.includes("password")) {
-        setError("패스워드가 일치하지 않습니다.");
+        setError("비밀번호가 올바르지 않습니다.");
       } else if (errorMessage.includes("player_not_found")) {
         setError("수박게임 계정을 찾을 수 없습니다. 수박게임에서 먼저 계정을 생성해주세요.");
-      } else if (errorMessage.includes("already_connected")) {
-        setError("이미 연결된 계정이 있습니다.");
+      } else if (errorMessage.includes("already_connected") || errorMessage.includes("member_already_connected")) {
+        setError("이미 다른 계정과 연결된 멤버입니다.");
+      } else if (errorMessage.includes("player_already_connected")) {
+        setError("이미 다른 멤버와 연결된 계정입니다.");
+      } else if (errorMessage.includes("request_already_pending") || errorMessage.includes("request_already_exists")) {
+        setError("이미 관리자 승인을 기다리는 연결 요청이 있습니다.");
       } else if (errorMessage.includes("member_not_found")) {
         setError("멤버 정보를 찾을 수 없습니다.");
       } else if (errorMessage.includes("password_not_set")) {
-        setError("수박게임 계정에 패스워드가 설정되지 않았습니다.");
+        setError("수박게임 계정에 비밀번호가 설정되지 않았습니다.");
       } else {
         setError(errorMessage);
       }

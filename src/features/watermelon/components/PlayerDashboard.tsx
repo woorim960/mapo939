@@ -39,6 +39,11 @@ export function PlayerDashboard({ open, onClose, playerId, onToast }: PlayerDash
     memberName?: string | null;
     totalEarned?: number;
     totalUsed?: number;
+    pendingRequest?: {
+      memberId: string;
+      memberName: string | null;
+      createdAt: string;
+    } | null;
   } | null>(null);
   const [showChangeMember, setShowChangeMember] = useState(false);
 
@@ -189,12 +194,39 @@ export function PlayerDashboard({ open, onClose, playerId, onToast }: PlayerDash
                   )}
                 </div>
               ) : (
-                <div className="rounded-xl border-2 border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-xl border-2 border-gray-200 bg-gray-50 p-4 flex flex-col">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">📋</span>
                     <div className="text-xs text-gray-600 font-semibold">출석 포인트</div>
                   </div>
-                  <div className="text-sm text-gray-500">연동 안 됨</div>
+                  {attendancePointsData?.pendingRequest ? (
+                    <>
+                      <div className="text-sm text-amber-600 font-semibold mb-1">
+                        승인 대기중
+                      </div>
+                      <div className="text-xs text-gray-600 mb-3">
+                        {attendancePointsData.pendingRequest.memberName} 멤버 연결 요청 중
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowChangeMember(true)}
+                        className="text-xs px-3 py-1.5 rounded-md bg-amber-500 text-white font-semibold hover:bg-amber-600 transition-colors mt-auto"
+                      >
+                        다른 멤버와 연동하기
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm text-gray-500 mb-3">연동 안 됨</div>
+                      <button
+                        type="button"
+                        onClick={() => setShowChangeMember(true)}
+                        className="text-xs px-3 py-1.5 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors mt-auto"
+                      >
+                        멤버 연결하기
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -301,16 +333,6 @@ export function PlayerDashboard({ open, onClose, playerId, onToast }: PlayerDash
               </div>
             </div>
 
-            {/* 출석부 연동 안내 */}
-            {!stats.memberId && (
-              <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4">
-                <div className="text-sm text-blue-700">
-                  💡 출석부 계정과 연동하면 출석 포인트를 사용할 수 있습니다.
-                  <br />
-                  출석부의 멤버 상세 페이지에서 연결할 수 있습니다.
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
