@@ -1,7 +1,9 @@
 // 환경 변수 검증 스크립트
 // 사용법: tsx scripts/check-env.ts
 
-import "dotenv/config";
+import { config } from "dotenv";
+// .env.local 파일을 명시적으로 로드
+config({ path: ".env.local" });
 
 const requiredEnvVars = [
   'DATABASE_URL',
